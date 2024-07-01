@@ -179,6 +179,14 @@ typedef struct {
 
 static wgpu_state_t state;
 
+// Quick and dirty logging
+#ifdef WGPU_BACKEND_DEBUG
+    #define LOG(...) printf(__VA_ARGS__)
+#else
+    #define LOG(...)
+#endif
+
+
 #define wgpu_def(val, def) ((val == 0) ? def : val)
 
 // Forward declaration of the platform-specific start function
@@ -283,7 +291,7 @@ static void emsc_update_canvas_size(wgpu_state_t *state) {
     emscripten_set_canvas_element_size("#canvas", w, h);
     state->width = (int)w;
     state->height = (int)h;
-    printf("canvas size updated: %d %d\n", state->width, state->height);
+    LOG("WGPU Backend: canvas size updated: %d %d\n", state->width, state->height);
 }
 
 static EM_BOOL emsc_size_changed(int event_type,
@@ -330,10 +338,18 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
                                void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
+
+    // Allow browser shortcuts
+    if (ev->ctrlKey || ev->altKey || ev->metaKey) {
+        return EM_FALSE;
+    }
+
     wgpu_keycode_t wgpu_key = emsc_translate_key(ev->code);
     if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_down_cb)) {
         state->key_down_cb((int)wgpu_key);
     }
+
+    LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
     return EM_TRUE;
 }
 
@@ -365,6 +381,8 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
     if ((ev->button < 3) && (state->mouse_btn_down_cb)) {
         state->mouse_btn_down_cb(ev->button);
     }
+
+    LOG("WGPU Backend -> mousedown_cb(): %d\n", ev->button);
     return EM_TRUE;
 }
 
@@ -395,6 +413,8 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     if (state->mouse_wheel_cb) {
         state->mouse_wheel_cb(-0.1f * (float)ev->deltaY);
     }
+
+    LOG("WGPU Backend -> wheel_cb(): %f\n", ev->deltaY);
     return EM_TRUE;
 }
 
@@ -402,7 +422,7 @@ static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
     (void)userdata;
     if (type != WGPUErrorType_NoError) {
-        printf("ERROR: %s\n", message);
+        LOG("WGPU Backend: ERROR: %s\n", message);
     }
 }
 
@@ -413,7 +433,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     (void)userdata;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestDeviceStatus_Success) {
-        printf("wgpuAdapterRequestDevice failed with %s!\n", msg);
+        LOG("WGPU Backend: wgpuAdapterRequestDevice failed with %s!\n", msg);
         state->async_setup_failed = true;
         return;
     }
@@ -432,7 +452,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     };
     state->surface = wgpuInstanceCreateSurface(state->instance, &surf_desc);
     if (!state->surface) {
-        printf("wgpuInstanceCreateSurface() failed.\n");
+        LOG("WGPU Backend: wgpuInstanceCreateSurface() failed.\n");
         state->async_setup_failed = true;
         return;
     }
@@ -450,7 +470,7 @@ static void request_adapter_cb(WGPURequestAdapterStatus status,
     (void)msg;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestAdapterStatus_Success) {
-        printf("wgpuInstanceRequestAdapter failed!\n");
+        LOG("WGPU Backend: wgpuInstanceRequestAdapter failed!\n");
         state->async_setup_failed = true;
     }
     state->adapter = adapter;
@@ -517,7 +537,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     assert(0 == state->msaa_tex);
     assert(0 == state->msaa_view);
 
-    printf("Creating swapchain with dimensions: %dx%d\n", state->width,
+    LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n", state->width,
            state->height);
 
     state->swapchain = wgpuDeviceCreateSwapChain(
@@ -531,7 +551,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
         });
 
     assert(state->swapchain);
-    printf("Swapchain created successfully.\n");
+    LOG("WGPU Backend: Swapchain created successfully.\n");
 
     if (!state->desc.no_depth_buffer) {
         state->depth_stencil_tex = wgpuDeviceCreateTexture(

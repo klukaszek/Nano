@@ -3,13 +3,14 @@
 #include <string.h>
 #include <webgpu/webgpu.h>
 
+#define WGPU_BACKEND_DEBUG
 // Include the header file for our entry system
 #include "nano.h"
 
 static WGPURenderPipeline pipeline;
 
-// Vertex shader
-static const char *vertex_shader_wgsl =
+// Default wgsl shader
+static const char *nano_default_shader =
     "struct VertexOutput {\n"
     "    @builtin(position) position: vec4<f32>,\n"
     "};\n"
@@ -23,11 +24,7 @@ static const char *vertex_shader_wgsl =
     "    var output: VertexOutput;\n"
     "    output.position = vec4<f32>(pos[vertex_index], 0.0, 1.0);\n"
     "    return output;\n"
-    "}\n";
-
-// Fragment shader
-// Change fade colour loop
-static const char *fragment_shader_wgsl =
+    "}\n"
     "@fragment\n"
     "fn fs_main() -> @location(0) vec4<f32> {\n"
     "    return vec4<f32>(1.0, 0.0, 0.0, 1.0);\n" // Red color
@@ -40,33 +37,19 @@ static void init(void) {
     WGPUDevice device = nano_app.wgpu.device;
 
     // Create shader modules
-    WGPUShaderModuleDescriptor vertex_shader_desc = {
+    WGPUShaderModuleDescriptor shader_desc = {
         .nextInChain = NULL,
-        .label = "Vertex Shader",
+        .label = "Nano Default Draw WGSL Shader",
     };
-    WGPUShaderModuleWGSLDescriptor vertex_shader_wgsl_desc = {
+    WGPUShaderModuleWGSLDescriptor shader_wgsl_desc = {
         .chain =
             (WGPUChainedStruct){.next = NULL,
                                 .sType = WGPUSType_ShaderModuleWGSLDescriptor},
-        .code = vertex_shader_wgsl,
+        .code = nano_default_shader,
     };
-    vertex_shader_desc.nextInChain = &vertex_shader_wgsl_desc.chain;
-    WGPUShaderModule vertex_shader =
-        wgpuDeviceCreateShaderModule(device, &vertex_shader_desc);
-
-    WGPUShaderModuleDescriptor fragment_shader_desc = {
-        .nextInChain = NULL,
-        .label = "Fragment Shader",
-    };
-    WGPUShaderModuleWGSLDescriptor fragment_shader_wgsl_desc = {
-        .chain =
-            (WGPUChainedStruct){.next = NULL,
-                                .sType = WGPUSType_ShaderModuleWGSLDescriptor},
-        .code = fragment_shader_wgsl,
-    };
-    fragment_shader_desc.nextInChain = &fragment_shader_wgsl_desc.chain;
-    WGPUShaderModule fragment_shader =
-        wgpuDeviceCreateShaderModule(device, &fragment_shader_desc);
+    shader_desc.nextInChain = &shader_wgsl_desc.chain;
+    WGPUShaderModule shader =
+        wgpuDeviceCreateShaderModule(device, &shader_desc);
 
     // Create pipeline layout
     WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
@@ -81,7 +64,7 @@ static void init(void) {
         .layout = pipeline_layout,
         .vertex =
             (WGPUVertexState){
-                .module = vertex_shader,
+                .module = shader,
                 .entryPoint = "vs_main",
                 .constantCount = 0,
                 .constants = NULL,
@@ -101,7 +84,7 @@ static void init(void) {
             },
         .fragment =
             &(WGPUFragmentState){
-                .module = fragment_shader,
+                .module = shader,
                 .entryPoint = "fs_main",
                 .constantCount = 0,
                 .constants = NULL,
@@ -120,8 +103,7 @@ static void init(void) {
 
     // Cleanup
     wgpuPipelineLayoutRelease(pipeline_layout);
-    wgpuShaderModuleRelease(vertex_shader);
-    wgpuShaderModuleRelease(fragment_shader);
+    wgpuShaderModuleRelease(shader);
 }
 
 static void frame(void) {
@@ -134,7 +116,7 @@ static void frame(void) {
     };
     WGPUCommandEncoder cmd_encoder =
         wgpuDeviceCreateCommandEncoder(nano_app.wgpu.device, &cmd_encoder_desc);
-    
+
     // Get the current swapchain texture view
     WGPUTextureView back_buffer_view = wgpu_get_render_view();
     if (!back_buffer_view) {
