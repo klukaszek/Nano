@@ -6,7 +6,6 @@
 // Include the header file for our entry system
 #include "nano.h"
 
-static WGPUDevice device;
 static WGPURenderPipeline pipeline;
 
 // Vertex shader
@@ -35,7 +34,10 @@ static const char *fragment_shader_wgsl =
     "}\n";
 
 static void init(void) {
-    device = wgpu_get_device();
+
+    nano_default_init();
+
+    WGPUDevice device = nano_app.wgpu.device;
 
     // Create shader modules
     WGPUShaderModuleDescriptor vertex_shader_desc = {
@@ -123,18 +125,22 @@ static void init(void) {
 }
 
 static void frame(void) {
+
+    nano_calc_fps();
+
+    // Create a command encoder for our default Nano render pass action
+    WGPUCommandEncoderDescriptor cmd_encoder_desc = {
+        .label = "Clear Screen Command Encoder",
+    };
+    WGPUCommandEncoder cmd_encoder =
+        wgpuDeviceCreateCommandEncoder(nano_app.wgpu.device, &cmd_encoder_desc);
+    
+    // Get the current swapchain texture view
     WGPUTextureView back_buffer_view = wgpu_get_render_view();
     if (!back_buffer_view) {
         printf("Failed to get current swapchain texture view.\n");
         return;
     }
-
-    WGPUCommandEncoderDescriptor cmd_encoder_desc = {
-        .label = "Command Encoder",
-    };
-
-    WGPUCommandEncoder cmd_encoder =
-        wgpuDeviceCreateCommandEncoder(device, &cmd_encoder_desc);
 
     WGPURenderPassColorAttachment color_attachment = {
         .view = back_buffer_view,
@@ -145,7 +151,7 @@ static void frame(void) {
         // the texture to the swapchain texture
         .resolveTarget =
             state.desc.sample_count > 1
-                ? wgpuSwapChainGetCurrentTextureView(state.swapchain)
+                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu.swapchain)
                 : NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
@@ -161,13 +167,13 @@ static void frame(void) {
 
     WGPURenderPassEncoder render_pass =
         wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
-
     if (!render_pass) {
-        printf("Failed to begin render pass.\n");
+        printf("NANO: Failed to begin default render pass encoder.\n");
         wgpuCommandEncoderRelease(cmd_encoder);
         return;
     }
 
+    // Set our render pass encoder to use our pipeline and
     wgpuRenderPassEncoderSetPipeline(render_pass, pipeline);
     wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(render_pass);
@@ -177,13 +183,13 @@ static void frame(void) {
     };
     WGPUCommandBuffer cmd_buffer =
         wgpuCommandEncoderFinish(cmd_encoder, &cmd_buffer_desc);
-    wgpuQueueSubmit(wgpuDeviceGetQueue(device), 1, &cmd_buffer);
+    wgpuQueueSubmit(wgpuDeviceGetQueue(nano_app.wgpu.device), 1, &cmd_buffer);
 
     wgpuCommandBufferRelease(cmd_buffer);
     wgpuCommandEncoderRelease(cmd_encoder);
 }
 
-static void shutdown(void) { wgpuRenderPipelineRelease(pipeline); }
+static void shutdown(void) { nano_default_cleanup(); }
 
 int main(int argc, char *argv[]) {
     wgpu_start(&(wgpu_desc_t){

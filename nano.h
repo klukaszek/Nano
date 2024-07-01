@@ -186,22 +186,11 @@ typedef struct nano_shader_pool_t {
     size_t shader_count;
 } nano_shader_pool_t;
 
-typedef WGPURenderPassEncoder nano_pass_action_t;
-
-// THIS WILL HAVE TO BE REWORKED TO NOT INCLUDE SOKOL
-#ifdef NANO_SOKOL_IMPL
-
-    // Use macros to properly define the backend for sokol
-    #define SOKOL_IMPL
-    #include <sokol_app.h>
-    #include <sokol_gfx.h>
-    #include <sokol_glue.h>
-    #include <sokol_log.h>
-    #include <util/sokol_imgui.h>
+typedef WGPURenderPassDescriptor nano_pass_action_t;
+typedef wgpu_state_t nano_wgpu_state_t;
 
 typedef struct nano_t {
-    WGPUDevice device;
-    WGPUSupportedLimits limits;
+    nano_wgpu_state_t wgpu;
     bool show_debug;
     vec2s dimensions;
     float frametime;
@@ -218,14 +207,13 @@ typedef struct nano_t {
 
 // Initialize a static nano_t struct to hold the running application data
 static nano_t nano_app = {
-    .device = 0,
-    .limits = {0},
+    .wgpu = {0},
     .show_debug = NANO_DEBUG_UI,
     .dimensions = {0},
     .frametime = 0.0f,
     .fps = 0.0f,
     .frame_count = 0.0f,
-    .pass_action = {0},
+    .pass_action = 0,
     .font_index = 0,
     .font_size = 16.0f,
     .buffer_pool = {0},
@@ -514,7 +502,8 @@ void nano_set_font(int index) {
 
     // Set the font as the default font
     io->FontDefault = nano_app.fonts[index];
-    io->FontGlobalScale = sapp_dpi_scale();
+    // IMPORTANT: FIGURE OUT DPI SCALING FOR WEBGPU
+    // io->FontGlobalScale = sapp_dpi_scale();
 }
 
 // Function to set the font size for the ImGui context
@@ -534,17 +523,9 @@ void nano_set_font_size(float size) {
 static void nano_calc_fps() {
 
     // Get the frame time and calculate the frames per second with delta time
-    nano_app.frametime = sapp_frame_duration();
-    nano_app.dimensions = (vec2s){{sapp_width(), sapp_height()}};
-
-    static float acc = 0.0f;
-    nano_app.frame_count++;
-    acc += nano_app.frametime;
-    if (acc > 1.0f) {
-        nano_app.fps = (float)nano_app.frame_count / acc;
-        acc = 0.0f;
-        nano_app.frame_count = 0;
-    }
+    nano_app.frametime = wgpu_frametime();
+    nano_app.dimensions = (vec2s){{wgpu_width(), wgpu_height()}};
+    nano_app.fps = 1000 / nano_app.frametime;
 }
 
 // Shader Parsing (using the wgsl-parser library)
@@ -691,8 +672,8 @@ int nano_build_pipeline_layout(nano_compute_info_t *info, uint32_t shader_id,
                 // Think about moving all of this to a separate function just
                 // for understanding and readability
                 nano_buffer_t buffer = nano_create_buffer(
-                    nano_app.device, &nano_app.buffer_pool, shader_id, i, j,
-                    buffer_usage, buffer_size);
+                    nano_app.wgpu.device, &nano_app.buffer_pool, shader_id, i,
+                    j, buffer_usage, buffer_size);
 
                 // Set the according bindgroup layout entry for the binding
                 bgl_entries[j] = (WGPUBindGroupLayoutEntry){
@@ -727,8 +708,8 @@ int nano_build_pipeline_layout(nano_compute_info_t *info, uint32_t shader_id,
 
         // Assign the bind group layout to the bind group layout array
         // so that we can create the WGPUPipelineLayoutDescriptor later.
-        bg_layouts[i] =
-            wgpuDeviceCreateBindGroupLayout(nano_app.device, &bg_layout_desc);
+        bg_layouts[i] = wgpuDeviceCreateBindGroupLayout(nano_app.wgpu.device,
+                                                        &bg_layout_desc);
         if (bg_layouts[i] == NULL) {
             fprintf(stderr,
                     "NANO: Shader %d: Could not create bind group "
@@ -820,7 +801,7 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 
     // Create the shader module for the compute shader and free the source
     WGPUShaderModule compute_shader =
-        wgpuDeviceCreateShaderModule(nano_app.device, &shader_desc);
+        wgpuDeviceCreateShaderModule(nano_app.wgpu.device, &shader_desc);
 
     // Free the shader source after creating the shader module
     free(shader_source);
@@ -854,8 +835,8 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
         .label = label,
     };
 
-    WGPUPipelineLayout pipeline_layout_obj =
-        wgpuDeviceCreatePipelineLayout(nano_app.device, &pipeline_layout_desc);
+    WGPUPipelineLayout pipeline_layout_obj = wgpuDeviceCreatePipelineLayout(
+        nano_app.wgpu.device, &pipeline_layout_desc);
 
     WGPUComputePipelineDescriptor pipeline_desc = {
         .layout = pipeline_layout_obj,
@@ -864,7 +845,7 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 
     // Create the compute pipeline
     WGPUComputePipeline pipeline =
-        wgpuDeviceCreateComputePipeline(nano_app.device, &pipeline_desc);
+        wgpuDeviceCreateComputePipeline(nano_app.wgpu.device, &pipeline_desc);
     if (pipeline != NULL) {
         printf("NANO: Successfully compiled shader %d\n", shader_id);
 
@@ -910,45 +891,37 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 static void nano_default_init(void) {
     printf("Initializing NANO WGPU app...\n");
 
-    // Initialize sokol_gfx
-    sg_setup(&(sg_desc){
-        .environment = sglue_environment(),
-        .logger.func = slog_func,
-    });
-
     // Get the WGPU device from sokol_gfx
-    nano_app.device = (WGPUDevice)sapp_wgpu_get_device();
+    nano_app.wgpu.device = wgpu_get_device();
+    nano_app.dimensions = (vec2s){{nano_app.wgpu.width, nano_app.wgpu.width}};
 
-    // Initialize sokol_imgui so that we can make calls to cimgui
-    simgui_setup(&(simgui_desc_t){.no_default_font = true});
+    // Inject CImGui into the WGPU context so we can use it for UI
 
-    // Get the ImGui IO pointer so we can access the fontatlas
-    ImGuiIO *io = igGetIO();
+    // // Initialize sokol_imgui so that we can make calls to cimgui
+    // simgui_setup(&(simgui_desc_t){.no_default_font = true});
+    //
+    // // Get the ImGui IO pointer so we can access the fontatlas
+    // ImGuiIO *io = igGetIO();
 
-    nano_app.dimensions = (vec2s){{sapp_width(), sapp_height()}};
-    nano_app.pass_action = (sg_pass_action){
-        .colors[0] = {.load_action = SG_LOADACTION_CLEAR,
-                      .clear_value = {1.0f, 0.0f, 0.0f, 1.0f}}};
+    // // Iterate through the fonts and add them to the font atlas
+    // for (int i = 0; i < NANO_NUM_FONTS; i++) {
+    //     nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
+    //         io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, nano_app.font_size,
+    //         NULL, NULL);
+    // }
+    //
+    // // Set the default font to the first font in the list (JetBrains Mono
+    // Nerd) nano_set_font(nano_app.font_index);
 
-    // Iterate through the fonts and add them to the font atlas
-    for (int i = 0; i < NANO_NUM_FONTS; i++) {
-        nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
-            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, nano_app.font_size,
-            NULL, NULL);
-    }
-
-    // Set the default font to the first font in the list (JetBrains Mono Nerd)
-    nano_set_font(nano_app.font_index);
+    printf("NANO: Initialized\n");
 }
 
 // Free any resources that were allocated
 static void nano_default_cleanup(void) {
-    simgui_shutdown();
-    sg_shutdown();
+    // simgui_shutdown();
+    wgpu_stop();
 }
 
 // The event function is called by sokol_app whenever an event occurs
 // and it passes the event to simgui_handle_event to handle the event
-static void nano_default_event(const sapp_event *e) { simgui_handle_event(e); }
-
-#endif // NANO_SOKOL_IMPL
+static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }

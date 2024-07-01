@@ -5,7 +5,6 @@ set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 # Define the source files
 set(SOURCES
-    clear_demo.c
     nano.h
 )
 

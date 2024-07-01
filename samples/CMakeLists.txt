@@ -14,6 +14,6 @@ target_link_libraries(clear_demo Nano)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(clear_demo PROPERTIES
-    COMPILE_FLAGS "${EMCC_COMPILER_FLAGS} -o ${PROJECT_NAME}.html --shell-file ${CMAKE_SOURCE_DIR}/shell.html"
-    LINK_FLAGS "${EMCC_LINKER_FLAGS}"
+    COMPILE_FLAGS "${EMCC_COMPILER_FLAGS}"
+    LINK_FLAGS "${EMCC_LINKER_FLAGS} -o clear_demo.html --shell-file shell.html"
 )

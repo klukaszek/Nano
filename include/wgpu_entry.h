@@ -174,6 +174,7 @@ typedef struct {
     wgpu_mouse_wheel_func mouse_wheel_cb;
     bool async_setup_done;
     bool async_setup_failed;
+    double last_frame_time;
 } wgpu_state_t;
 
 static wgpu_state_t state;
@@ -184,6 +185,7 @@ static wgpu_state_t state;
 // (in this case its just emscripten)
 void wgpu_platform_start(wgpu_state_t *state);
 void wgpu_swapchain_init(wgpu_state_t *state);
+static double emsc_get_frametime(void);
 
 void wgpu_start(const wgpu_desc_t *desc) {
     assert(desc);
@@ -210,6 +212,11 @@ void wgpu_key_down(wgpu_key_func fn) { state.key_down_cb = fn; }
 void wgpu_key_up(wgpu_key_func fn) { state.key_up_cb = fn; }
 
 void wgpu_char(wgpu_char_func fn) { state.char_cb = fn; }
+
+double wgpu_frametime(void) {
+    double frame_time = emsc_get_frametime();
+    return frame_time;
+}
 
 void wgpu_mouse_btn_down(wgpu_mouse_btn_func fn) {
     state.mouse_btn_down_cb = fn;
@@ -258,6 +265,17 @@ static WGPUTextureFormat wgpu_get_depth_format(void) {
 
 // Emscripten specific code
 // ----------------------------------------------------------------------------
+
+static double emsc_get_frametime(void) {
+    double now = emscripten_get_now();
+    if (state.last_frame_time > 0.0) {
+        double frametime = now - state.last_frame_time;
+        state.last_frame_time = now;
+        return frametime;
+    }
+    state.last_frame_time = now;
+    return 0;
+}
 
 static void emsc_update_canvas_size(wgpu_state_t *state) {
     double w, h;
@@ -578,5 +596,24 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
     if (state->swapchain) {
         wgpuSwapChainRelease(state->swapchain);
         state->swapchain = 0;
+    }
+}
+
+void wgpu_stop(void) {
+    if (state.desc.shutdown_cb) {
+        state.desc.shutdown_cb();
+    }
+    wgpu_swapchain_discard(&state);
+    if (state.device) {
+        wgpuDeviceRelease(state.device);
+        state.device = 0;
+    }
+    if (state.adapter) {
+        wgpuAdapterRelease(state.adapter);
+        state.adapter = 0;
+    }
+    if (state.instance) {
+        wgpuInstanceRelease(state.instance);
+        state.instance = 0;
     }
 }
