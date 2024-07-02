@@ -64,6 +64,7 @@
 //       to preprocess strings and replace ligatures with the correct unicode
 //       characters.
 
+#define CIMGUI_WGPU
 #include "wgpu_entry.h"
 #include <stdint.h>
 #include <unistd.h>

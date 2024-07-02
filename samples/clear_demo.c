@@ -4,10 +4,13 @@
 #include <webgpu/webgpu.h>
 
 #define WGPU_BACKEND_DEBUG
-// Include the header file for our entry system
+#define CIMGUI_WGPU
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui/cimgui.h"
 #include "nano.h"
 
 static WGPURenderPipeline pipeline;
+static float clear_color[4] = {1.0f, 0.0f, 0.0f, 1.0f};
 
 // Default wgsl shader
 static const char *nano_default_shader =
@@ -104,11 +107,49 @@ static void init(void) {
     // Cleanup
     wgpuPipelineLayoutRelease(pipeline_layout);
     wgpuShaderModuleRelease(shader);
+
+    // Setup Dear ImGui for WGPU
+    igCreateContext(NULL);
+    ImGuiIO *io = igGetIO();
+    ImGui_ImplWGPU_Init(device, 2, wgpu_get_color_format(),
+                        WGPUTextureFormat_Undefined);
+
+    // Set initial display size
+    io->DisplaySize =
+        (ImVec2){(float)nano_app.dimensions.x, (float)nano_app.dimensions.y};
 }
 
 static void frame(void) {
 
     nano_calc_fps();
+
+    // Update ImGui Display Size
+    ImGuiIO *io = igGetIO();
+    io->DisplaySize = (ImVec2){nano_app.dimensions.x, nano_app.dimensions.y};
+    printf("Display Size: %f, %f\n", io->DisplaySize.x, io->DisplaySize.y);
+
+    // Start the Dear ImGui frame
+    // --------------------------
+
+    ImGui_ImplWGPU_NewFrame();
+    igNewFrame();
+
+    // Create a simple ImGui window
+    igBegin("Hello, ImGui!", NULL, 0);
+    igText("This is some useful text.");
+    static float f = 0.0f;
+    igSliderFloat("float", &f, 0.0f, 1.0f, "%.3f", 0);
+    igColorEdit3("clear color", (float *)&clear_color, 0);
+    igSameLine(0.0f, -1.0f);
+    igText("Application average %.3f ms/frame (%.1f FPS)",
+           1000.0f / nano_app.fps, nano_app.fps);
+    igEnd();
+
+    // Render ImGui
+    igRender();
+
+    // --------------------------
+    // End the Dear ImGui frame
 
     // Create a command encoder for our default Nano render pass action
     WGPUCommandEncoderDescriptor cmd_encoder_desc = {
@@ -137,7 +178,8 @@ static void frame(void) {
                 : NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
-        .clearValue = (WGPUColor){1.0f, 0.0f, 0.0f, 1.0f},
+        .clearValue = (WGPUColor){clear_color[0], clear_color[1],
+                                  clear_color[2], clear_color[3]},
     };
 
     WGPURenderPassDescriptor render_pass_desc = {
@@ -158,6 +200,11 @@ static void frame(void) {
     // Set our render pass encoder to use our pipeline and
     wgpuRenderPassEncoderSetPipeline(render_pass, pipeline);
     wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
+
+    // Render ImGui Draw Data
+    ImGui_ImplWGPU_SetEncoder(cmd_encoder);
+    ImGui_ImplWGPU_RenderDrawData(igGetDrawData(), render_pass);
+
     wgpuRenderPassEncoderEnd(render_pass);
 
     WGPUCommandBufferDescriptor cmd_buffer_desc = {

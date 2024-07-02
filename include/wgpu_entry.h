@@ -1,3 +1,5 @@
+#ifndef WGPU_ENTRY_H
+#define WGPU_ENTRY_H
 #include <assert.h>
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -5,6 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <webgpu/webgpu.h>
+
+#ifdef CIMGUI_WGPU
+    #include "cimgui_impl_wgpu.h"
+#endif
 
 typedef enum {
     WGPU_KEY_INVALID,
@@ -186,7 +192,6 @@ static wgpu_state_t state;
     #define LOG(...)
 #endif
 
-
 #define wgpu_def(val, def) ((val == 0) ? def : val)
 
 // Forward declaration of the platform-specific start function
@@ -291,7 +296,8 @@ static void emsc_update_canvas_size(wgpu_state_t *state) {
     emscripten_set_canvas_element_size("#canvas", w, h);
     state->width = (int)w;
     state->height = (int)h;
-    LOG("WGPU Backend: canvas size updated: %d %d\n", state->width, state->height);
+    LOG("WGPU Backend: canvas size updated: %d %d\n", state->width,
+        state->height);
 }
 
 static EM_BOOL emsc_size_changed(int event_type,
@@ -350,6 +356,16 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
     }
 
     LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+
+// ImGui Handling
+#ifdef CIMGUI_WGPU
+    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_down_cb)) {
+        state->key_down_cb((int)wgpu_key);
+
+        ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
+    }
+#endif
+
     return EM_TRUE;
 }
 
@@ -361,6 +377,15 @@ static EM_BOOL emsc_keyup_cb(int type, const EmscriptenKeyboardEvent *ev,
     if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_up_cb)) {
         state->key_up_cb((int)wgpu_key);
     }
+
+#ifdef CIMGUI_WGPU
+    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_up_cb)) {
+        state->key_up_cb((int)wgpu_key);
+
+        ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, false);
+    }
+#endif
+
     return EM_TRUE;
 }
 
@@ -371,6 +396,11 @@ static EM_BOOL emsc_keypress_cb(int type, const EmscriptenKeyboardEvent *ev,
     if (state->char_cb) {
         state->char_cb(ev->charCode);
     }
+
+// ImGui Handling
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessCharEvent(ev->charCode);
+#endif
     return EM_TRUE;
 }
 
@@ -381,6 +411,11 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
     if ((ev->button < 3) && (state->mouse_btn_down_cb)) {
         state->mouse_btn_down_cb(ev->button);
     }
+
+#ifdef CIMGUI_WGPU
+    printf("ImGui_ImplWGPU_ProcessMouseButtonEvent\n");
+    ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, false);
+#endif
 
     LOG("WGPU Backend -> mousedown_cb(): %d\n", ev->button);
     return EM_TRUE;
@@ -393,6 +428,10 @@ static EM_BOOL emsc_mouseup_cb(int type, const EmscriptenMouseEvent *ev,
     if ((ev->button < 3) && (state->mouse_btn_up_cb)) {
         state->mouse_btn_up_cb(ev->button);
     }
+
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, false);
+#endif
     return EM_TRUE;
 }
 
@@ -403,6 +442,11 @@ static EM_BOOL emsc_mousemove_cb(int type, const EmscriptenMouseEvent *ev,
     if (state->mouse_pos_cb) {
         state->mouse_pos_cb((float)ev->targetX, (float)ev->targetY);
     }
+#ifdef CIMGUI_WGPU
+    printf("ImGui_ImplWGPU_ProcessMousePositionEvent\n");
+    ImGui_ImplWGPU_ProcessMousePositionEvent((float)ev->targetX,
+                                             (float)ev->targetY);
+#endif
     return EM_TRUE;
 }
 
@@ -413,6 +457,11 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     if (state->mouse_wheel_cb) {
         state->mouse_wheel_cb(-0.1f * (float)ev->deltaY);
     }
+
+#ifdef CIMGUI_WGPU
+    printf("ImGui_ImplWGPU_ProcessMouseWheelEvent\n");
+    ImGui_ImplWGPU_ProcessMouseWheelEvent(-0.1f * (float)ev->deltaY);
+#endif
 
     LOG("WGPU Backend -> wheel_cb(): %f\n", ev->deltaY);
     return EM_TRUE;
@@ -537,8 +586,8 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     assert(0 == state->msaa_tex);
     assert(0 == state->msaa_view);
 
-    LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n", state->width,
-           state->height);
+    LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
+        state->width, state->height);
 
     state->swapchain = wgpuDeviceCreateSwapChain(
         state->device, state->surface,
@@ -637,3 +686,4 @@ void wgpu_stop(void) {
         state.instance = 0;
     }
 }
+#endif // WGPU_ENTRY_H
