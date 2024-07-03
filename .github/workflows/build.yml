@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          submodules: true
+          submodules_recursive: true
 
       - name: Set up Emscripten environment
         run: |
@@ -34,3 +37,4 @@ jobs:
         run: |
           source emsdk/emsdk_env.sh
           make
+
