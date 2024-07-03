@@ -473,22 +473,28 @@ void nano_toggle_debug() { nano_app.show_debug = !nano_app.show_debug; }
 typedef struct nano_font_t {
     unsigned char *ttf;
     int ttf_len;
+    const char name[256];
 } nano_font_t;
 
 // Font 0
 nano_font_t jetbrains_mono_nerd_font = {
     .ttf = JetBrainsMonoNerdFontMono_Bold_ttf,
-    .ttf_len = sizeof(JetBrainsMonoNerdFontMono_Bold_ttf)};
+    .ttf_len = sizeof(JetBrainsMonoNerdFontMono_Bold_ttf),
+    .name = "JetBrains Mono Nerd",
+};
 
 // Font 1
 nano_font_t lilex_nerd_font = {.ttf = LilexNerdFontMono_Medium_ttf,
-                               .ttf_len = sizeof(LilexNerdFontMono_Medium_ttf)};
+                               .ttf_len = sizeof(LilexNerdFontMono_Medium_ttf),
+                               .name = "Lilex Nerd Font"};
 
 // Font 2
 nano_font_t roboto_font = {.ttf = Roboto_Regular_ttf,
-                           .ttf_len = sizeof(Roboto_Regular_ttf)};
+                           .ttf_len = sizeof(Roboto_Regular_ttf),
+                           .name = "Roboto"};
 
-// 0 => JetBrains Mono Nerd, 1 => Lilex Nerd Font, 2 => Roboto
+
+// 0 => JetBrains Mono Nerd, 1 => Lilex Nerd Font, 2 => Roboto_Regular_ttf
 static nano_font_t *fonts[] = {&jetbrains_mono_nerd_font, &lilex_nerd_font,
                                &roboto_font};
 
@@ -511,8 +517,10 @@ void nano_set_font(int index) {
 void nano_set_font_size(float size) {
     ImGuiIO *io = igGetIO();
     for (int i = 0; i < NANO_NUM_FONTS; i++) {
+        ImFontConfig config = {0};
+        strncpy(config.Name, fonts[i]->name, strlen(fonts[i]->name));
         nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
-            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, size, NULL, NULL);
+            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, size, &config, NULL);
     }
     nano_set_font(nano_app.font_index);
 }
@@ -897,29 +905,37 @@ static void nano_default_init(void) {
     nano_app.dimensions = (vec2s){{nano_app.wgpu.width, nano_app.wgpu.width}};
 
     // Inject CImGui into the WGPU context so we can use it for UI
+    // Setup Dear ImGui for WGPU
+    ImGuiContext *ctx = igCreateContext(NULL);
+    igSetCurrentContext(ctx);
+    ImGuiIO *io = igGetIO();
+    ImGui_ImplWGPU_Init(nano_app.wgpu.device, 2, wgpu_get_color_format(),
+                        WGPUTextureFormat_Undefined);
 
-    // // Initialize sokol_imgui so that we can make calls to cimgui
-    // simgui_setup(&(simgui_desc_t){.no_default_font = true});
-    //
-    // // Get the ImGui IO pointer so we can access the fontatlas
-    // ImGuiIO *io = igGetIO();
+    usleep(1000);
 
-    // // Iterate through the fonts and add them to the font atlas
-    // for (int i = 0; i < NANO_NUM_FONTS; i++) {
-    //     nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
-    //         io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, nano_app.font_size,
-    //         NULL, NULL);
-    // }
-    //
-    // // Set the default font to the first font in the list (JetBrains Mono
-    // Nerd) nano_set_font(nano_app.font_index);
+    // Set initial display size
+    io->DisplaySize =
+        (ImVec2){(float)nano_app.dimensions.x, (float)nano_app.dimensions.y};
+
+    // Iterate through the fonts and add them to the font atlas
+    for (int i = 0; i < NANO_NUM_FONTS; i++) {
+        nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
+            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, 16.0, NULL, NULL);
+        memcpy((void *)nano_app.fonts[i]->ConfigData->Name, fonts[i]->name,
+               strlen(fonts[i]->name));
+        printf("NANO: Added ImGui Font: %s\n", nano_app.fonts[i]->ConfigData->Name);
+    }
+
+    // Set the default font to the first font in the list (JetBrains Mono Nerd)
+    nano_set_font(nano_app.font_index);
 
     printf("NANO: Initialized\n");
 }
 
 // Free any resources that were allocated
 static void nano_default_cleanup(void) {
-    // simgui_shutdown();
+    ImGui_ImplWGPU_Shutdown();
     wgpu_stop();
 }
 

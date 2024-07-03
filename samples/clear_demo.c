@@ -4,7 +4,6 @@
 #include <webgpu/webgpu.h>
 
 #define WGPU_BACKEND_DEBUG
-#define CIMGUI_WGPU
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui/cimgui.h"
 #include "nano.h"
@@ -107,16 +106,6 @@ static void init(void) {
     // Cleanup
     wgpuPipelineLayoutRelease(pipeline_layout);
     wgpuShaderModuleRelease(shader);
-
-    // Setup Dear ImGui for WGPU
-    igCreateContext(NULL);
-    ImGuiIO *io = igGetIO();
-    ImGui_ImplWGPU_Init(device, 2, wgpu_get_color_format(),
-                        WGPUTextureFormat_Undefined);
-
-    // Set initial display size
-    io->DisplaySize =
-        (ImVec2){(float)nano_app.dimensions.x, (float)nano_app.dimensions.y};
 }
 
 static void frame(void) {
@@ -126,7 +115,6 @@ static void frame(void) {
     // Update ImGui Display Size
     ImGuiIO *io = igGetIO();
     io->DisplaySize = (ImVec2){nano_app.dimensions.x, nano_app.dimensions.y};
-    printf("Display Size: %f, %f\n", io->DisplaySize.x, io->DisplaySize.y);
 
     // Start the Dear ImGui frame
     // --------------------------
@@ -134,16 +122,7 @@ static void frame(void) {
     ImGui_ImplWGPU_NewFrame();
     igNewFrame();
 
-    // Create a simple ImGui window
-    igBegin("Hello, ImGui!", NULL, 0);
-    igText("This is some useful text.");
-    static float f = 0.0f;
-    igSliderFloat("float", &f, 0.0f, 1.0f, "%.3f", 0);
-    igColorEdit3("clear color", (float *)&clear_color, 0);
-    igSameLine(0.0f, -1.0f);
-    igText("Application average %.3f ms/frame (%.1f FPS)",
-           1000.0f / nano_app.fps, nano_app.fps);
-    igEnd();
+    igShowDemoWindow(NULL);
 
     // Render ImGui
     igRender();
@@ -204,6 +183,8 @@ static void frame(void) {
     // Render ImGui Draw Data
     ImGui_ImplWGPU_SetEncoder(cmd_encoder);
     ImGui_ImplWGPU_RenderDrawData(igGetDrawData(), render_pass);
+    igUpdatePlatformWindows();
+    igRenderPlatformWindowsDefault(NULL, NULL);
 
     wgpuRenderPassEncoderEnd(render_pass);
 

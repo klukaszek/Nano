@@ -325,6 +325,42 @@ static struct {
     {"ArrowRight", WGPU_KEY_RIGHT},
     {"ArrowDown", WGPU_KEY_DOWN},
     {"Delete", WGPU_KEY_DELETE},
+    {"Digit0", WGPU_KEY_0},
+    {"Digit1", WGPU_KEY_1},
+    {"Digit2", WGPU_KEY_2},
+    {"Digit3", WGPU_KEY_3},
+    {"Digit4", WGPU_KEY_4},
+    {"Digit5", WGPU_KEY_5},
+    {"Digit6", WGPU_KEY_6},
+    {"Digit7", WGPU_KEY_7},
+    {"Digit8", WGPU_KEY_8},
+    {"Digit9", WGPU_KEY_9},
+    {"KeyA", WGPU_KEY_A},
+    {"KeyB", WGPU_KEY_B},
+    {"KeyC", WGPU_KEY_C},
+    {"KeyD", WGPU_KEY_D},
+    {"KeyE", WGPU_KEY_E},
+    {"KeyF", WGPU_KEY_F},
+    {"KeyG", WGPU_KEY_G},
+    {"KeyH", WGPU_KEY_H},
+    {"KeyI", WGPU_KEY_I},
+    {"KeyJ", WGPU_KEY_J},
+    {"KeyK", WGPU_KEY_K},
+    {"KeyL", WGPU_KEY_L},
+    {"KeyM", WGPU_KEY_M},
+    {"KeyN", WGPU_KEY_N},
+    {"KeyO", WGPU_KEY_O},
+    {"KeyP", WGPU_KEY_P},
+    {"KeyQ", WGPU_KEY_Q},
+    {"KeyR", WGPU_KEY_R},
+    {"KeyS", WGPU_KEY_S},
+    {"KeyT", WGPU_KEY_T},
+    {"KeyU", WGPU_KEY_U},
+    {"KeyV", WGPU_KEY_V},
+    {"KeyW", WGPU_KEY_W},
+    {"KeyX", WGPU_KEY_X},
+    {"KeyY", WGPU_KEY_Y},
+    {"KeyZ", WGPU_KEY_Z},
     {0, WGPU_KEY_INVALID},
 };
 
@@ -349,22 +385,35 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
     if (ev->ctrlKey || ev->altKey || ev->metaKey) {
         return EM_FALSE;
     }
-
+    
+    // Handle key toggling the key state and calling the callback for the backend
     wgpu_keycode_t wgpu_key = emsc_translate_key(ev->code);
-    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_down_cb)) {
-        state->key_down_cb((int)wgpu_key);
-    }
+    if (WGPU_KEY_INVALID != wgpu_key) {
+        if (state->key_down_cb) {
+            state->key_down_cb((int)wgpu_key);
+        }
 
-    LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
-
-// ImGui Handling
+        LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+    // Send the key event to ImGui if it is enabled
 #ifdef CIMGUI_WGPU
-    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_down_cb)) {
-        state->key_down_cb((int)wgpu_key);
-
         ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
-    }
 #endif
+    }
+    
+    // Since the key pressed callback does not seem to be working, we can just use key down
+    if (ev->key[1] == '\0') {
+        char c = ev->key[0];
+        printf("Key pressed: %c\n", c);
+        if (c >= 32 && c <= 126) {
+            // I'm probably gonna remove this callback since the emsc keypress callback is not working
+            if (state->char_cb) {
+                state->char_cb(c);
+            }
+#ifdef CIMGUI_WGPU
+            ImGui_ImplWGPU_ProcessCharEvent(c);
+#endif
+        }
+    }
 
     return EM_TRUE;
 }
@@ -373,18 +422,18 @@ static EM_BOOL emsc_keyup_cb(int type, const EmscriptenKeyboardEvent *ev,
                              void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
+
     wgpu_keycode_t wgpu_key = emsc_translate_key(ev->code);
-    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_up_cb)) {
-        state->key_up_cb((int)wgpu_key);
-    }
+    if (WGPU_KEY_INVALID != wgpu_key) {
+        if (state->key_down_cb) {
+            state->key_down_cb((int)wgpu_key);
+            LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+        }
 
 #ifdef CIMGUI_WGPU
-    if ((WGPU_KEY_INVALID != wgpu_key) && (state->key_up_cb)) {
-        state->key_up_cb((int)wgpu_key);
-
         ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, false);
-    }
 #endif
+    }
 
     return EM_TRUE;
 }
@@ -408,16 +457,19 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
                                  void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
-    if ((ev->button < 3) && (state->mouse_btn_down_cb)) {
-        state->mouse_btn_down_cb(ev->button);
-    }
-
+    if (ev->button < 3) {
+        if (state->mouse_btn_down_cb) {
+            state->mouse_btn_down_cb(ev->button);
+        }
 #ifdef CIMGUI_WGPU
-    printf("ImGui_ImplWGPU_ProcessMouseButtonEvent\n");
-    ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, false);
+        LOG("WGPU Backend -> emsc_mousedown_cb(): "
+            "ImGui_ImplWGPU_ProcessMouseButtonEvent\n");
+        ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, true);
 #endif
 
-    LOG("WGPU Backend -> mousedown_cb(): %d\n", ev->button);
+        LOG("WGPU Backend -> emsc_mousedown_cb(): %d\n", ev->button);
+    }
+
     return EM_TRUE;
 }
 
@@ -425,13 +477,16 @@ static EM_BOOL emsc_mouseup_cb(int type, const EmscriptenMouseEvent *ev,
                                void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
-    if ((ev->button < 3) && (state->mouse_btn_up_cb)) {
-        state->mouse_btn_up_cb(ev->button);
+    if (ev->button < 3) {
+
+        if (state->mouse_btn_up_cb) {
+            state->mouse_btn_up_cb(ev->button);
+        }
+#ifdef CIMGUI_WGPU
+        ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, false);
+#endif
     }
 
-#ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, false);
-#endif
     return EM_TRUE;
 }
 
@@ -443,7 +498,6 @@ static EM_BOOL emsc_mousemove_cb(int type, const EmscriptenMouseEvent *ev,
         state->mouse_pos_cb((float)ev->targetX, (float)ev->targetY);
     }
 #ifdef CIMGUI_WGPU
-    printf("ImGui_ImplWGPU_ProcessMousePositionEvent\n");
     ImGui_ImplWGPU_ProcessMousePositionEvent((float)ev->targetX,
                                              (float)ev->targetY);
 #endif
@@ -459,11 +513,12 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     }
 
 #ifdef CIMGUI_WGPU
-    printf("ImGui_ImplWGPU_ProcessMouseWheelEvent\n");
+    LOG("WGPU Backend -> emsc_wheel_cb(): "
+        "ImGui_ImplWGPU_ProcessMouseWheelEvent\n");
     ImGui_ImplWGPU_ProcessMouseWheelEvent(-0.1f * (float)ev->deltaY);
 #endif
 
-    LOG("WGPU Backend -> wheel_cb(): %f\n", ev->deltaY);
+    LOG("WGPU Backend -> emsc_wheel_cb(): %f\n", ev->deltaY);
     return EM_TRUE;
 }
 
@@ -552,7 +607,7 @@ void wgpu_platform_start(wgpu_state_t *state) {
     assert(state->instance == 0);
 
     emsc_update_canvas_size(state);
-    emscripten_set_resize_callback("#canvas", 0, false, emsc_size_changed);
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, true, emsc_size_changed);
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
                                     emsc_keydown_cb);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
