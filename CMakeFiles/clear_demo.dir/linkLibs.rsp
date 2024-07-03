@@ -1,0 +1,1 @@
+ ../libNano.a ../include/cimgui/cimgui.a "../include/wgsl-parser/libwgsl-parser.a" ../include/cglm/libcglm.a 
