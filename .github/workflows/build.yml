@@ -1,0 +1,30 @@
+name: Build Nano with Emscripten
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Emscripten environment
+        uses: rdp/emscripten@latest
+        with:
+          version: 2.0.34
+
+      - name: Configure with EmCMake
+        run: |
+          emcmake cmake .
+
+      - name: Build with Make
+        run: |
+          make
