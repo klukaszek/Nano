@@ -1,4 +1,4 @@
-name: Build Nano with Emscripten
+name: build nano with emscripten
 
 on:
   push:
@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: checkout repository
         uses: actions/checkout@v3
         with:
           submodules: true
 
-      - name: Set up Emscripten environment
+      - name: set up emscripten environment
         run: |
           git clone https://github.com/emscripten-core/emsdk.git
           cd emsdk
@@ -27,14 +27,21 @@ jobs:
           source ./emsdk_env.sh
           cd ..
 
-      - name: Configure with CMake
+      - name: configure with cmake
         run: |
           git submodule update --init --recursive
           source emsdk/emsdk_env.sh
           emcmake cmake .
 
-      - name: Build with Make
+      - name: build with make
         run: |
           source emsdk/emsdk_env.sh
           make
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' && success()
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./samples
 
