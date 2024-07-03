@@ -318,6 +318,7 @@ static struct {
     {"Tab", WGPU_KEY_TAB},
     {"Enter", WGPU_KEY_ENTER},
     {"Escape", WGPU_KEY_ESCAPE},
+    {"Space", WGPU_KEY_SPACE},
     {"End", WGPU_KEY_END},
     {"Home", WGPU_KEY_HOME},
     {"ArrowLeft", WGPU_KEY_LEFT},
@@ -385,8 +386,9 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
     if (ev->ctrlKey || ev->altKey || ev->metaKey) {
         return EM_FALSE;
     }
-    
-    // Handle key toggling the key state and calling the callback for the backend
+
+    // Handle key toggling the key state and calling the callback for the
+    // backend
     wgpu_keycode_t wgpu_key = emsc_translate_key(ev->code);
     if (WGPU_KEY_INVALID != wgpu_key) {
         if (state->key_down_cb) {
@@ -394,18 +396,19 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
         }
 
         LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
-    // Send the key event to ImGui if it is enabled
+        // Send the key event to ImGui if it is enabled
 #ifdef CIMGUI_WGPU
         ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
 #endif
     }
-    
-    // Since the key pressed callback does not seem to be working, we can just use key down
+
+    // Since the key pressed callback does not seem to be working, we can just
+    // use key down
     if (ev->key[1] == '\0') {
         char c = ev->key[0];
-        printf("Key pressed: %c\n", c);
         if (c >= 32 && c <= 126) {
-            // I'm probably gonna remove this callback since the emsc keypress callback is not working
+            // I'm probably gonna remove this callback since the emsc keypress
+            // callback is not working
             if (state->char_cb) {
                 state->char_cb(c);
             }
@@ -462,8 +465,6 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
             state->mouse_btn_down_cb(ev->button);
         }
 #ifdef CIMGUI_WGPU
-        LOG("WGPU Backend -> emsc_mousedown_cb(): "
-            "ImGui_ImplWGPU_ProcessMouseButtonEvent\n");
         ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, true);
 #endif
 
@@ -513,8 +514,6 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     }
 
 #ifdef CIMGUI_WGPU
-    LOG("WGPU Backend -> emsc_wheel_cb(): "
-        "ImGui_ImplWGPU_ProcessMouseWheelEvent\n");
     ImGui_ImplWGPU_ProcessMouseWheelEvent(-0.1f * (float)ev->deltaY);
 #endif
 
@@ -607,7 +606,8 @@ void wgpu_platform_start(wgpu_state_t *state) {
     assert(state->instance == 0);
 
     emsc_update_canvas_size(state);
-    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, true, emsc_size_changed);
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, true,
+                                   emsc_size_changed);
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
                                     emsc_keydown_cb);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,

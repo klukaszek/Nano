@@ -493,7 +493,6 @@ nano_font_t roboto_font = {.ttf = Roboto_Regular_ttf,
                            .ttf_len = sizeof(Roboto_Regular_ttf),
                            .name = "Roboto"};
 
-
 // 0 => JetBrains Mono Nerd, 1 => Lilex Nerd Font, 2 => Roboto_Regular_ttf
 static nano_font_t *fonts[] = {&jetbrains_mono_nerd_font, &lilex_nerd_font,
                                &roboto_font};
@@ -509,20 +508,99 @@ void nano_set_font(int index) {
 
     // Set the font as the default font
     io->FontDefault = nano_app.fonts[index];
+
     // IMPORTANT: FIGURE OUT DPI SCALING FOR WEBGPU
     // io->FontGlobalScale = sapp_dpi_scale();
 }
 
+// Function to initialize the fonts for the ImGui context
+void nano_init_fonts(float font_size) {
+
+    ImGuiIO *io = igGetIO();
+
+    // Iterate through the fonts and add them to the font atlas
+    for (int i = 0; i < NANO_NUM_FONTS; i++) {
+        nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
+            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, font_size, NULL, NULL);
+        memcpy((void *)nano_app.fonts[i]->ConfigData->Name, fonts[i]->name,
+               strlen(fonts[i]->name));
+        printf("NANO: Added ImGui Font: %s\n",
+               nano_app.fonts[i]->ConfigData->Name);
+    }
+
+    // Set the default font to the first font in the list (JetBrains Mono Nerd)
+    nano_set_font(nano_app.font_index);
+}
+
 // Function to set the font size for the ImGui context
 void nano_set_font_size(float size) {
-    ImGuiIO *io = igGetIO();
-    for (int i = 0; i < NANO_NUM_FONTS; i++) {
-        ImFontConfig config = {0};
-        strncpy(config.Name, fonts[i]->name, strlen(fonts[i]->name));
-        nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
-            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, size, &config, NULL);
+    nano_init_fonts(size); // They do the same thing
+}
+
+// A void function that draws a UI collection of the nano_app state
+// Include collapsibles for all nested structs
+static bool nano_draw_debug_ui() {
+    bool update_font = false;
+    bool visible = true;
+    bool closed = false;
+    if (nano_app.show_debug) {
+        igSetNextWindowSize((ImVec2){600, 400}, ImGuiCond_FirstUseEver);
+        igBegin("Nano Debug", &nano_app.show_debug, 0);
+        if (igCollapsingHeader_BoolPtr("About Nano", &visible,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+
+            igTextWrapped(
+                "Nano is a simple solution for starting a new WebGPU based"
+                " application. Nano is designed to use "
+                "C as its primary programming language. The only exception is "
+                "CImGui's "
+                "bindings to the original C++ implementation of Dear ImGui, "
+                "but "
+                "CImGui "
+                "works fine. Nano is currently being rebuilt from the ground "
+                "up so "
+                "it "
+                "is not ready for anything yet.");
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        }
+        if (igCollapsingHeader_BoolPtr("Nano Debug Information", &visible,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+            igText("Nano Debug Information");
+            igSeparator();
+            igText("Frame Time: %.2f ms", nano_app.frametime);
+            igText("Frames Per Second: %.2f", nano_app.fps);
+            igText("Frame Count: %d", nano_app.frame_count);
+            igText("Window Dimensions: (%.2f, %.2f)", nano_app.dimensions.x,
+                   nano_app.dimensions.y);
+            igSeparator();
+            igText("Buffer Pool Information");
+            igText("Buffer Count: %zu", nano_app.buffer_pool.buffer_count);
+            igText("Total Buffer Size: %zu", nano_app.buffer_pool.total_size);
+            igSeparator();
+            igText("Shader Pool Information");
+            igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
+            igSeparator();
+        }
+        igText("Font Information");
+        igText("Font Index: %d", nano_app.font_index);
+        igText("Font Size: %.2f", nano_app.font_size);
+        if (igCombo_Str("Select Font", &nano_app.font_index,
+                        "JetBrains Mono Nerd Font\0Lilex Nerd Font\0Roboto\0\0",
+                        3)) {
+            nano_set_font(nano_app.font_index);
+        }
+        igSliderFloat("Font Size", &nano_app.font_size, 8.0f, 32.0f, "%.2f",
+                      1.0f);
+        // Once the slider is released, set the flag for editing the font size
+        // This requires our render pass to basically be completed before we can
+        // do this however. This is a workaround for now.
+        if (igIsItemDeactivatedAfterEdit()) {
+            update_font = true;
+        }
+
+        igEnd();
     }
-    nano_set_font(nano_app.font_index);
+    return update_font;
 }
 
 // Stats / Telemetry
@@ -912,23 +990,16 @@ static void nano_default_init(void) {
     ImGui_ImplWGPU_Init(nano_app.wgpu.device, 2, wgpu_get_color_format(),
                         WGPUTextureFormat_Undefined);
 
+    // For whatever reason it would trip up on the first frame if we didnt't
+    // sleep
     usleep(1000);
 
     // Set initial display size
     io->DisplaySize =
         (ImVec2){(float)nano_app.dimensions.x, (float)nano_app.dimensions.y};
 
-    // Iterate through the fonts and add them to the font atlas
-    for (int i = 0; i < NANO_NUM_FONTS; i++) {
-        nano_app.fonts[i] = ImFontAtlas_AddFontFromMemoryTTF(
-            io->Fonts, fonts[i]->ttf, fonts[i]->ttf_len, 16.0, NULL, NULL);
-        memcpy((void *)nano_app.fonts[i]->ConfigData->Name, fonts[i]->name,
-               strlen(fonts[i]->name));
-        printf("NANO: Added ImGui Font: %s\n", nano_app.fonts[i]->ConfigData->Name);
-    }
-
-    // Set the default font to the first font in the list (JetBrains Mono Nerd)
-    nano_set_font(nano_app.font_index);
+    // Set the fonts
+    nano_init_fonts(nano_app.font_size);
 
     printf("NANO: Initialized\n");
 }
