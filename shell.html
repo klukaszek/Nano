@@ -36,20 +36,13 @@
 
 <body>
     <canvas class="app" id="canvas"></canvas>
-    <button id="fullscreenToggle">Toggle Fullscreen</button>
     <script type='text/javascript'>
-        document.getElementById('fullscreenToggle').addEventListener('click', function () {
-            if (!document.fullscreenElement) {
-                if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen();
-                }
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                }
-            }
+        document.getElementById('canvas').addEventListener('click', function() {
+            this.focus();
         });
-
+        document.getElementById('canvas').addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
         var Module = {
             preRun: [],
             postRun: [],

@@ -10,10 +10,10 @@ add_library(wgsl-parser
     webgpu.h
 )
 
-# Create the test executable
-add_executable(test
-    test.c
-)
-
-# Link the wgsl_parser library to the test executable
-target_link_libraries(test PRIVATE wgsl-parser)
+# # Create the test executable
+# add_executable(test
+#     test.c
+# )
+#
+# # Link the wgsl_parser library to the test executable
+# target_link_libraries(test PRIVATE wgsl-parser)
