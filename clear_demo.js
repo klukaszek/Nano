@@ -4031,12 +4031,7 @@ function dbg(...args) {
       abort('native code called abort()');
     };
 
-  var nowIsMonotonic = 1;
-  var __emscripten_get_now_is_monotonic = () => nowIsMonotonic;
-
   var __emscripten_memcpy_js = (dest, src, num) => HEAPU8.copyWithin(dest, src, src + num);
-
-  var _emscripten_date_now = () => Date.now();
 
   var JSEvents = {
   removeAllEventListeners() {
@@ -6167,11 +6162,7 @@ var wasmImports = {
   /** @export */
   _abort_js: __abort_js,
   /** @export */
-  _emscripten_get_now_is_monotonic: __emscripten_get_now_is_monotonic,
-  /** @export */
   _emscripten_memcpy_js: __emscripten_memcpy_js,
-  /** @export */
-  emscripten_date_now: _emscripten_date_now,
   /** @export */
   emscripten_get_canvas_element_size: _emscripten_get_canvas_element_size,
   /** @export */
