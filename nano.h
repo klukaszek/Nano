@@ -191,12 +191,10 @@ typedef WGPURenderPassDescriptor nano_pass_action_t;
 typedef wgpu_state_t nano_wgpu_state_t;
 
 typedef struct nano_t {
-    nano_wgpu_state_t wgpu;
+    nano_wgpu_state_t *wgpu;
     bool show_debug;
-    vec2s dimensions;
     float frametime;
     float fps;
-    int frame_count;
     nano_pass_action_t pass_action;
     int font_index;
     float font_size;
@@ -208,12 +206,10 @@ typedef struct nano_t {
 
 // Initialize a static nano_t struct to hold the running application data
 static nano_t nano_app = {
-    .wgpu = {0},
+    .wgpu = 0,
     .show_debug = NANO_DEBUG_UI,
-    .dimensions = {0},
     .frametime = 0.0f,
     .fps = 0.0f,
-    .frame_count = 0.0f,
     .pass_action = 0,
     .font_index = 0,
     .font_size = 16.0f,
@@ -569,9 +565,9 @@ static bool nano_draw_debug_ui() {
             igSeparator();
             igText("Frame Time: %.2f ms", nano_app.frametime);
             igText("Frames Per Second: %.2f", nano_app.fps);
-            igText("Frame Count: %d", nano_app.frame_count);
-            igText("Window Dimensions: (%.2f, %.2f)", nano_app.dimensions.x,
-                   nano_app.dimensions.y);
+            igText("Window Dimensions: (%d, %d)", nano_app.wgpu->width,
+                   nano_app.wgpu->height);
+            printf("%d, %d\n", nano_app.wgpu->width, nano_app.wgpu->height);
             igSeparator();
             igText("Buffer Pool Information");
             igText("Buffer Count: %zu", nano_app.buffer_pool.buffer_count);
@@ -579,23 +575,26 @@ static bool nano_draw_debug_ui() {
             igSeparator();
             igText("Shader Pool Information");
             igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
-            igSeparator();
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
         }
-        igText("Font Information");
-        igText("Font Index: %d", nano_app.font_index);
-        igText("Font Size: %.2f", nano_app.font_size);
-        if (igCombo_Str("Select Font", &nano_app.font_index,
-                        "JetBrains Mono Nerd Font\0Lilex Nerd Font\0Roboto\0\0",
-                        3)) {
-            nano_set_font(nano_app.font_index);
-        }
-        igSliderFloat("Font Size", &nano_app.font_size, 8.0f, 32.0f, "%.2f",
-                      1.0f);
-        // Once the slider is released, set the flag for editing the font size
-        // This requires our render pass to basically be completed before we can
-        // do this however. This is a workaround for now.
-        if (igIsItemDeactivatedAfterEdit()) {
-            update_font = true;
+        if (igCollapsingHeader_BoolPtr("Nano Font Information", &visible,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+            igText("Font Index: %d", nano_app.font_index);
+            igText("Font Size: %.2f", nano_app.font_size);
+            if (igCombo_Str(
+                    "Select Font", &nano_app.font_index,
+                    "JetBrains Mono Nerd Font\0Lilex Nerd Font\0Roboto\0\0",
+                    3)) {
+                nano_set_font(nano_app.font_index);
+            }
+            igSliderFloat("Font Size", &nano_app.font_size, 8.0f, 32.0f, "%.2f",
+                          1.0f);
+            // Once the slider is released, set the flag for editing the font
+            // size This requires our render pass to basically be completed
+            // before we can do this however. This is a workaround for now.
+            if (igIsItemDeactivatedAfterEdit()) {
+                update_font = true;
+            }
         }
 
         igEnd();
@@ -607,11 +606,17 @@ static bool nano_draw_debug_ui() {
 // -----------------------------------------------
 
 // Calculate current frames per second
-static void nano_calc_fps() {
+static void nano_default_frame() {
 
     // Get the frame time and calculate the frames per second with delta time
     nano_app.frametime = wgpu_frametime();
-    nano_app.dimensions = (vec2s){{wgpu_width(), wgpu_height()}};
+    // Update the dimensions of the window
+    nano_app.wgpu->width = wgpu_width();
+    nano_app.wgpu->height = wgpu_height();
+    ImGuiIO *io = igGetIO();
+    io->DisplaySize =
+        (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
+    // Calculate the frames per second
     nano_app.fps = 1000 / nano_app.frametime;
 }
 
@@ -759,7 +764,7 @@ int nano_build_pipeline_layout(nano_compute_info_t *info, uint32_t shader_id,
                 // Think about moving all of this to a separate function just
                 // for understanding and readability
                 nano_buffer_t buffer = nano_create_buffer(
-                    nano_app.wgpu.device, &nano_app.buffer_pool, shader_id, i,
+                    nano_app.wgpu->device, &nano_app.buffer_pool, shader_id, i,
                     j, buffer_usage, buffer_size);
 
                 // Set the according bindgroup layout entry for the binding
@@ -795,7 +800,7 @@ int nano_build_pipeline_layout(nano_compute_info_t *info, uint32_t shader_id,
 
         // Assign the bind group layout to the bind group layout array
         // so that we can create the WGPUPipelineLayoutDescriptor later.
-        bg_layouts[i] = wgpuDeviceCreateBindGroupLayout(nano_app.wgpu.device,
+        bg_layouts[i] = wgpuDeviceCreateBindGroupLayout(nano_app.wgpu->device,
                                                         &bg_layout_desc);
         if (bg_layouts[i] == NULL) {
             fprintf(stderr,
@@ -888,7 +893,7 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 
     // Create the shader module for the compute shader and free the source
     WGPUShaderModule compute_shader =
-        wgpuDeviceCreateShaderModule(nano_app.wgpu.device, &shader_desc);
+        wgpuDeviceCreateShaderModule(nano_app.wgpu->device, &shader_desc);
 
     // Free the shader source after creating the shader module
     free(shader_source);
@@ -923,7 +928,7 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
     };
 
     WGPUPipelineLayout pipeline_layout_obj = wgpuDeviceCreatePipelineLayout(
-        nano_app.wgpu.device, &pipeline_layout_desc);
+        nano_app.wgpu->device, &pipeline_layout_desc);
 
     WGPUComputePipelineDescriptor pipeline_desc = {
         .layout = pipeline_layout_obj,
@@ -932,7 +937,7 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 
     // Create the compute pipeline
     WGPUComputePipeline pipeline =
-        wgpuDeviceCreateComputePipeline(nano_app.wgpu.device, &pipeline_desc);
+        wgpuDeviceCreateComputePipeline(nano_app.wgpu->device, &pipeline_desc);
     if (pipeline != NULL) {
         printf("NANO: Successfully compiled shader %d\n", shader_id);
 
@@ -978,25 +983,19 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 static void nano_default_init(void) {
     printf("Initializing NANO WGPU app...\n");
 
-    // Get the WGPU device from sokol_gfx
-    nano_app.wgpu.device = wgpu_get_device();
-    nano_app.dimensions = (vec2s){{nano_app.wgpu.width, nano_app.wgpu.width}};
+    nano_app.wgpu = wgpu_get_state();
 
     // Inject CImGui into the WGPU context so we can use it for UI
     // Setup Dear ImGui for WGPU
     ImGuiContext *ctx = igCreateContext(NULL);
     igSetCurrentContext(ctx);
     ImGuiIO *io = igGetIO();
-    ImGui_ImplWGPU_Init(nano_app.wgpu.device, 2, wgpu_get_color_format(),
+    ImGui_ImplWGPU_Init(nano_app.wgpu->device, 2, wgpu_get_color_format(),
                         WGPUTextureFormat_Undefined);
-
-    // For whatever reason it would trip up on the first frame if we didnt't
-    // sleep
-    usleep(1000);
 
     // Set initial display size
     io->DisplaySize =
-        (ImVec2){(float)nano_app.dimensions.x, (float)nano_app.dimensions.y};
+        (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
 
     // Set the fonts
     nano_init_fonts(nano_app.font_size);

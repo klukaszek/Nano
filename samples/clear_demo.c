@@ -44,7 +44,7 @@ static const char *nano_default_shader =
 static void init(void) {
     nano_default_init();
 
-    WGPUDevice device = nano_app.wgpu.device;
+    WGPUDevice device = nano_app.wgpu->device;
 
     // Create uniform buffer
     WGPUBufferDescriptor uniform_buffer_desc = {
@@ -160,18 +160,19 @@ static void init(void) {
 
 static void frame(void) {
 
+    // Update Nano App
+    nano_default_frame();
+
     // Update ImGui Display Size
     ImGuiIO *io = igGetIO();
-    io->DisplaySize = (ImVec2){nano_app.dimensions.x, nano_app.dimensions.y};
-
-    nano_calc_fps();
+    io->DisplaySize = (ImVec2){nano_app.wgpu->width, nano_app.wgpu->height};
 
     // Create a command encoder for our default Nano render pass action
     WGPUCommandEncoderDescriptor cmd_encoder_desc = {
         .label = "Clear Screen Command Encoder",
     };
     WGPUCommandEncoder cmd_encoder =
-        wgpuDeviceCreateCommandEncoder(nano_app.wgpu.device, &cmd_encoder_desc);
+        wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, &cmd_encoder_desc);
 
     // Start the Dear ImGui frame
     // --------------------------
@@ -193,7 +194,7 @@ static void frame(void) {
 
     igRender();
 
-    wgpuQueueWriteBuffer(wgpuDeviceGetQueue(nano_app.wgpu.device),
+    wgpuQueueWriteBuffer(wgpuDeviceGetQueue(nano_app.wgpu->device),
                          uniform_buffer, 0, clear_color, sizeof(clear_color));
 
     // Set the ImGui encoder to our current encoder
@@ -219,7 +220,7 @@ static void frame(void) {
         // resolve the texture to the swapchain texture
         .resolveTarget =
             state.desc.sample_count > 1
-                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu.swapchain)
+                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
                 : NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
@@ -260,7 +261,7 @@ static void frame(void) {
     };
     WGPUCommandBuffer cmd_buffer =
         wgpuCommandEncoderFinish(cmd_encoder, &cmd_buffer_desc);
-    wgpuQueueSubmit(wgpuDeviceGetQueue(nano_app.wgpu.device), 1, &cmd_buffer);
+    wgpuQueueSubmit(wgpuDeviceGetQueue(nano_app.wgpu->device), 1, &cmd_buffer);
 
     wgpuCommandBufferRelease(cmd_buffer);
     wgpuCommandEncoderRelease(cmd_encoder);
@@ -281,14 +282,15 @@ static void shutdown(void) {
 }
 
 int main(int argc, char *argv[]) {
-    wgpu_start(&(wgpu_desc_t){
-        .title = "Solid Color Demo",
-        .width = 640,
-        .height = 480,
-        .init_cb = init,
-        .frame_cb = frame,
-        .shutdown_cb = shutdown,
-        .sample_count = 1,
-    });
+    wgpu_start(
+        &(wgpu_desc_t){
+            .title = "Solid Color Demo",
+            .width = 640,
+            .height = 480,
+            .init_cb = init,
+            .frame_cb = frame,
+            .shutdown_cb = shutdown,
+            .sample_count = 1,
+        });
     return 0;
 }

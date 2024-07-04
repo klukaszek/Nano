@@ -214,6 +214,8 @@ void wgpu_start(const wgpu_desc_t *desc) {
     wgpu_platform_start(&state);
 }
 
+wgpu_state_t *wgpu_get_state(void) { return &state; }
+
 WGPUDevice wgpu_get_device(void) { return state.device; }
 
 int wgpu_width(void) { return state.width; }
@@ -305,7 +307,7 @@ static EM_BOOL emsc_size_changed(int event_type,
                                  void *userdata) {
     (void)event_type;
     (void)ui_event;
-    wgpu_state_t *state = userdata;
+    wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size(state);
     return true;
 }
