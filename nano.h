@@ -567,7 +567,6 @@ static bool nano_draw_debug_ui() {
             igText("Frames Per Second: %.2f", nano_app.fps);
             igText("Window Dimensions: (%d, %d)", nano_app.wgpu->width,
                    nano_app.wgpu->height);
-            printf("%d, %d\n", nano_app.wgpu->width, nano_app.wgpu->height);
             igSeparator();
             igText("Buffer Pool Information");
             igText("Buffer Count: %zu", nano_app.buffer_pool.buffer_count);

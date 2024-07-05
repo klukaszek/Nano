@@ -292,14 +292,19 @@ static double emsc_get_frametime(void) {
     return 0;
 }
 
-static void emsc_update_canvas_size(wgpu_state_t *state) {
+// For whatever reason, the state pointer is not being passed to the callback
+// functions, so we have to use a global state variable to access the state for
+// this method. I really do not know why this is happening.
+static void emsc_update_canvas_size() {
     double w, h;
     emscripten_get_element_css_size("#canvas", &w, &h);
     emscripten_set_canvas_element_size("#canvas", w, h);
-    state->width = (int)w;
-    state->height = (int)h;
-    LOG("WGPU Backend: canvas size updated: %d %d\n", state->width,
-        state->height);
+    state.width = (int)w;
+    state.height = (int)h;
+
+    LOG("WGPU Backend -> emsc_update_canvas_size(): %d %d\n", state.width,
+        state.height);
+    LOG("WGPU Backend -> %p | %p | %p\n", &state, &state.width, &state.height);
 }
 
 static EM_BOOL emsc_size_changed(int event_type,
@@ -307,8 +312,10 @@ static EM_BOOL emsc_size_changed(int event_type,
                                  void *userdata) {
     (void)event_type;
     (void)ui_event;
+    // For some reason, the state pointer is not being passed to the callback
+    // for this function and I get an address of 0. So we can ignore the userdata.
     wgpu_state_t *state = (wgpu_state_t *)userdata;
-    emsc_update_canvas_size(state);
+    emsc_update_canvas_size();
     return true;
 }
 
@@ -523,6 +530,54 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     return EM_TRUE;
 }
 
+static EM_BOOL emsc_touchstart_cb(int eventType, const EmscriptenTouchEvent *e,
+                                  void *userData) {
+    wgpu_state_t *state = (wgpu_state_t *)userData;
+    if (e->numTouches > 0) {
+        if (state->mouse_btn_down_cb) {
+            state->mouse_btn_down_cb(0); // Simulate left mouse button
+        }
+        if (state->mouse_pos_cb) {
+            state->mouse_pos_cb((float)e->touches[0].targetX,
+                                (float)e->touches[0].targetY);
+        }
+#ifdef CIMGUI_WGPU
+        ImGui_ImplWGPU_ProcessMouseButtonEvent(0, true);
+        ImGui_ImplWGPU_ProcessMousePositionEvent((float)e->touches[0].targetX,
+                                                 (float)e->touches[0].targetY);
+#endif
+    }
+    return EM_TRUE;
+}
+
+static EM_BOOL emsc_touchend_cb(int eventType, const EmscriptenTouchEvent *e,
+                                void *userData) {
+    wgpu_state_t *state = (wgpu_state_t *)userData;
+    if (state->mouse_btn_up_cb) {
+        state->mouse_btn_up_cb(0); // Simulate left mouse button
+    }
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessMouseButtonEvent(0, false);
+#endif
+    return EM_TRUE;
+}
+
+static EM_BOOL emsc_touchmove_cb(int eventType, const EmscriptenTouchEvent *e,
+                                 void *userData) {
+    wgpu_state_t *state = (wgpu_state_t *)userData;
+    if (e->numTouches > 0) {
+        if (state->mouse_pos_cb) {
+            state->mouse_pos_cb((float)e->touches[0].targetX,
+                                (float)e->touches[0].targetY);
+        }
+#ifdef CIMGUI_WGPU
+        ImGui_ImplWGPU_ProcessMousePositionEvent((float)e->touches[0].targetX,
+                                                 (float)e->touches[0].targetY);
+#endif
+    }
+    return EM_TRUE;
+}
+
 static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
     (void)userdata;
@@ -604,24 +659,37 @@ static EM_BOOL emsc_frame(double time, void *userdata) {
     return EM_TRUE;
 }
 
+/// Start platform specific code
 void wgpu_platform_start(wgpu_state_t *state) {
     assert(state->instance == 0);
 
-    emsc_update_canvas_size(state);
+    // Set canvas size callbacks for emscripten
+    emsc_update_canvas_size();
     emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, true,
                                    emsc_size_changed);
+
+    // Set keyboard callbacks for emscripten
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
                                     emsc_keydown_cb);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
                                   emsc_keyup_cb);
     emscripten_set_keypress_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state,
                                      true, emsc_keypress_cb);
+
+    // Set mouse callbacks for emscripten
     emscripten_set_mousedown_callback("#canvas", state, true,
                                       emsc_mousedown_cb);
     emscripten_set_mouseup_callback("#canvas", state, true, emsc_mouseup_cb);
     emscripten_set_mousemove_callback("#canvas", state, true,
                                       emsc_mousemove_cb);
     emscripten_set_wheel_callback("#canvas", state, true, emsc_wheel_cb);
+
+    // Set touch callbacks for emscripten
+    emscripten_set_touchstart_callback("#canvas", state, true,
+                                       emsc_touchstart_cb);
+    emscripten_set_touchend_callback("#canvas", state, true, emsc_touchend_cb);
+    emscripten_set_touchmove_callback("#canvas", state, true,
+                                      emsc_touchmove_cb);
 
     state->instance = wgpuCreateInstance(0);
     assert(state->instance);
