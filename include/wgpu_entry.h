@@ -311,11 +311,14 @@ static EM_BOOL emsc_size_changed(int event_type,
                                  void *userdata) {
     (void)event_type;
     (void)ui_event;
-    // For some reason, the state pointer is not being passed to the callback
-    // for this function and I get an address of 0. So we can ignore the
-    // userdata.
-    wgpu_state_t *state = (wgpu_state_t *)userdata;
+    // // For some reason, the state pointer is not being passed to the callback
+    // // for this function and I get an address of 0. So we can ignore the
+    // // userdata.
+    // wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ScaleUIToCanvas(state.width, state.height);
+#endif
     return true;
 }
 
@@ -584,63 +587,6 @@ static EM_BOOL emsc_touchmove_cb(int eventType, const EmscriptenTouchEvent *e,
     return EM_TRUE;
 }
 
-#ifdef MOBILE_COMPAT
-
-// Setup the mobile keyboard input for the canvas by manipulating the DOM
-// and assigning event callbacks to the input element from our C code.
-EM_JS(void, emsc_setup_mobile_key_input, (), {
-    var input = document.getElementById('mobileInput');
-    input.addEventListener(
-        'input', function(e) {
-            var inputChar = e.data;
-            if (inputChar &&inputChar.length == 1) {
-                Module._emsc_mobile_input(inputChar.charCodeAt(0));
-            }
-        });
-    input.addEventListener(
-        'keydown', function(e) { Module._emsc_mobile_key_down(e.keyCode); });
-    input.addEventListener(
-        'keyup', function(e) { Module._emsc_mobile_key_up(e.keyCode); });
-    console.log('WGPU Backend -> emsc_setup_mobile_key_input(): Mobile keyboard input setup.');
-});
-
-EMSCRIPTEN_KEEPALIVE
-void emsc_mobile_input(int charCode) {
-    // This function will be called for each character input
-    if (state.char_cb) {
-        state.char_cb(charCode);
-    }
-#ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ProcessCharEvent(charCode);
-#endif
-}
-
-EMSCRIPTEN_KEEPALIVE
-void emsc_mobile_key_down(int keyCode) {
-    // Convert keyCode to your WGPU key code if necessary
-    wgpu_keycode_t wgpu_key = emsc_translate_key((const char *)&keyCode);
-    if (state.key_down_cb) {
-        state.key_down_cb((int)wgpu_key);
-    }
-#ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
-#endif
-}
-
-EMSCRIPTEN_KEEPALIVE
-void emsc_mobile_key_up(int keyCode) {
-    // Convert keyCode to your WGPU key code if necessary
-    wgpu_keycode_t wgpu_key = emsc_translate_key((const char *)&keyCode);
-    if (state.key_up_cb) {
-        state.key_up_cb((int)wgpu_key);
-    }
-#ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, false);
-#endif
-}
-
-#endif // MOBILE_COMPAT
-
 static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
     (void)userdata;
@@ -682,6 +628,13 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     state->render_format =
         wgpuSurfaceGetPreferredFormat(state->surface, state->adapter);
     wgpu_swapchain_init(state);
+#ifdef CIMGUI_WGPU
+    // Once the swapchain is created, we can initialize ImGui
+    // This is only done if the CIMGUI_WGPU macro is defined
+    ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
+                        WGPUTextureFormat_Undefined, state->width,
+                        state->height);
+#endif
     state->desc.init_cb();
     wgpuDevicePopErrorScope(state->device, error_cb, 0);
     state->async_setup_done = true;
@@ -754,15 +707,10 @@ void wgpu_platform_start(wgpu_state_t *state) {
     emscripten_set_touchmove_callback("#canvas", state, true,
                                       emsc_touchmove_cb);
 
-#ifdef MOBILE_COMPAT
-    // Set up mobile keyboard input workaround for emscripten
-    emsc_setup_mobile_key_input();
-#endif
-
     state->instance = wgpuCreateInstance(0);
     assert(state->instance);
-    wgpuInstanceRequestAdapter(state->instance, 0, request_adapter_cb, state);
 
+    wgpuInstanceRequestAdapter(state->instance, 0, request_adapter_cb, state);
     emscripten_request_animation_frame_loop(emsc_frame, state);
 }
 
@@ -878,5 +826,7 @@ void wgpu_stop(void) {
         wgpuInstanceRelease(state.instance);
         state.instance = 0;
     }
+
+    ImGui_ImplWGPU_Shutdown();
 }
 #endif // WGPU_ENTRY_H

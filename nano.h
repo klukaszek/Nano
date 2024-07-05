@@ -540,11 +540,10 @@ static bool nano_draw_debug_ui() {
     bool visible = true;
     bool closed = false;
     if (nano_app.show_debug) {
-        igSetNextWindowSize((ImVec2){600, 400}, ImGuiCond_FirstUseEver);
+        igSetNextWindowSize((ImVec2){400, 400}, ImGuiCond_FirstUseEver);
         igBegin("Nano Debug", &nano_app.show_debug, 0);
         if (igCollapsingHeader_BoolPtr("About Nano", &visible,
                                        ImGuiTreeNodeFlags_CollapsingHeader)) {
-
             igTextWrapped(
                 "Nano is a simple solution for starting a new WebGPU based"
                 " application. Nano is designed to use "
@@ -595,6 +594,10 @@ static bool nano_draw_debug_ui() {
                 update_font = true;
             }
         }
+
+        igInputTextMultiline("Test Editor", "Hello, World!", 1024,
+                             (ImVec2){300, 200},
+                             ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
 
         igEnd();
     }
@@ -982,19 +985,10 @@ uint32_t nano_create_shader(const char *shader_path, nano_compute_info_t *info,
 static void nano_default_init(void) {
     printf("Initializing NANO WGPU app...\n");
 
+    // Retrieve the WGPU state from the wgpu_entry.h file
+    // This state is created and ready to use when running an
+    // application with wgpu_start().
     nano_app.wgpu = wgpu_get_state();
-
-    // Inject CImGui into the WGPU context so we can use it for UI
-    // Setup Dear ImGui for WGPU
-    ImGuiContext *ctx = igCreateContext(NULL);
-    igSetCurrentContext(ctx);
-    ImGuiIO *io = igGetIO();
-    ImGui_ImplWGPU_Init(nano_app.wgpu->device, 2, wgpu_get_color_format(),
-                        WGPUTextureFormat_Undefined);
-
-    // Set initial display size
-    io->DisplaySize =
-        (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
 
     // Set the fonts
     nano_init_fonts(nano_app.font_size);
@@ -1003,10 +997,7 @@ static void nano_default_init(void) {
 }
 
 // Free any resources that were allocated
-static void nano_default_cleanup(void) {
-    ImGui_ImplWGPU_Shutdown();
-    wgpu_stop();
-}
+static void nano_default_cleanup(void) { wgpu_stop(); }
 
 // The event function is called by sokol_app whenever an event occurs
 // and it passes the event to simgui_handle_event to handle the event

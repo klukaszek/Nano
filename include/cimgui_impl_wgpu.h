@@ -21,8 +21,6 @@
     #define ILOG(...)
 #endif
 
-#define MOBILE_COMPAT
-
 // ----------------------------------------------------------------------------
 
 // WGPU CImGUI Shaders
@@ -227,7 +225,8 @@ typedef struct ImGui_ImplWGPU_Data {
 static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
-                                       WGPUTextureFormat depth_stencil_format);
+                                       WGPUTextureFormat depth_stencil_format,
+                                       float width, float height);
 static inline void ImGui_ImplWGPU_Shutdown(void);
 static inline void ImGui_ImplWGPU_NewFrame(void);
 static inline void
@@ -247,6 +246,7 @@ static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta);
 static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
                                                           bool down);
 static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y);
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float width, float height);
 
 // Function Implementations
 // ----------------------------------------------------------------------------
@@ -281,8 +281,18 @@ static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device,
 static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
-                                       WGPUTextureFormat depth_stencil_format) {
+                                       WGPUTextureFormat depth_stencil_format,
+                                       float width, float height) {
+    // Inject CImGui into the WGPU context so we can use it for UI
+    // Setup Dear ImGui for WGPU
+    ImGuiContext *ctx = igCreateContext(NULL);
+    igSetCurrentContext(ctx);
+    
+    // Get the ImGui IO
     ImGuiIO *io = igGetIO();
+
+    // Set initial display size
+    io->DisplaySize = (ImVec2){width, height};
     IM_ASSERT(io->BackendRendererUserData == NULL &&
               "Already initialized a renderer backend!");
 
@@ -324,6 +334,9 @@ static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
     bd->VertexBufferSize = 5000;
     bd->IndexBufferSize = 10000;
 
+    // Set up ImGui style scaling
+    ImGui_ImplWGPU_ScaleUIToCanvas(width, height);
+
     return true;
 }
 
@@ -350,56 +363,6 @@ inline void ImGui_ImplWGPU_Shutdown(void) {
     IM_FREE(bd);
 }
 
-#ifdef MOBILE_COMPAT
-
-// Show mobile keyboard by focusing the input element
-static inline void emsc_show_mobile_keyboard() {
-    EM_ASM({
-        var mobileInput = document.getElementById('mobileInput');
-        mobileInput.focus();
-    });
-}
-
-// Hide mobile keyboard by blurring the input element
-static inline void emsc_hide_mobile_keyboard() {
-    EM_ASM({
-        var mobileInput = document.getElementById('mobileInput');
-        mobileInput.blur();
-    });
-}
-
-// Check for mobile keyboard events and show/hide keyboard
-static inline void ImGui_ImplWGPU_MobileKeyboard() {
-    ImGuiIO *io = igGetIO();
-
-    // Toggle mobile keyboard when needed
-    if (io->WantCaptureKeyboard) {
-        emsc_show_mobile_keyboard();
-    } else {
-        emsc_hide_mobile_keyboard();
-    }
-
-    // Show mobile keyboard when text input is needed
-    if (io->WantTextInput) {
-        emsc_show_mobile_keyboard();
-    } else {
-        emsc_hide_mobile_keyboard();
-    }
-
-    // Show mobile keyboard when input queue is not empty
-    if (io->InputQueueCharacters.Size > 0) {
-        emsc_show_mobile_keyboard();
-    }
-
-    // Hide mobile keyboard when mouse pos is set
-    // (when finger taps out of keyboard).
-    if (io->WantSetMousePos) {
-        emsc_hide_mobile_keyboard();
-    }
-}
-
-#endif
-
 // Prepare for a new frame
 inline void ImGui_ImplWGPU_NewFrame(void) {
     ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
@@ -411,12 +374,6 @@ inline void ImGui_ImplWGPU_NewFrame(void) {
     int width, height;
     emscripten_get_canvas_element_size("#canvas", &width, &height);
     io->DisplaySize = (ImVec2){(float)width, (float)height};
-
-// Check for input request and show mobile keyboard if needed by
-// manipulating the DOM
-#ifdef MOBILE_COMPAT
-    ImGui_ImplWGPU_MobileKeyboard();
-#endif
 
     // Update time step (targeting 60 FPS)
     double current_time = emscripten_get_now() / 1000.0;
@@ -897,6 +854,29 @@ static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y) {
 static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta) {
     ImGuiIO *io = igGetIO();
     ImGuiIO_AddMouseWheelEvent(io, 0.0f, delta);
+}
+
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float width, float height) {
+    const float base_width = 1920.0f;
+    const float base_height = 1080.0f;
+
+    // Calculate scale factor based on expected resolution
+    float scale_x = base_width / width;
+    float scale_y = base_height / height;
+
+    // Set scale factor and ensure it is at least 1.0 (relative to 1080p)
+    // This should be changed to the target resolution if we can get it
+    float scale = (scale_x < scale_y) ? scale_x : scale_y;
+    scale = (scale < 1.0f) ? 1.0f : scale;
+
+    // Set display size
+    ImGuiIO *io = igGetIO();
+    io->FontGlobalScale = scale;
+
+    // Destroy and recreate the style to preserve the scale
+    ImGuiStyle_destroy(igGetStyle());
+    ImGuiStyle *new_style = ImGuiStyle_ImGuiStyle();
+    ImGuiStyle_ScaleAllSizes(new_style, scale);
 }
 
 static inline ImGuiKey ImGui_ImplWGPU_KeycodeToImGuiKey(int keycode) {
