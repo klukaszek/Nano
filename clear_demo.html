@@ -36,18 +36,12 @@
 
 <body>
     <canvas class="app" id="canvas"></canvas>
-    <input type="text" id="mobileInput" style="position: absolute; top: -1000px; left: -1000px;">
     <script type='text/javascript'>
         document.getElementById('canvas').addEventListener('click', function () {
             this.focus();
         });
         document.getElementById('canvas').addEventListener('contextmenu', function (e) {
             e.preventDefault();
-        });
-        document.getElementById('mobileInput').addEventListener('input', function (e) {
-            var inputText = e.target.value;
-            Module.ccall('emsc_mobile_input', 'void', ['string'], [inputText]);
-            e.target.value = ''; // Clear the input field after handling
         });
         var Module = {
             preRun: [],
