@@ -899,6 +899,13 @@ function dbg(...args) {
 }
 // end include: runtime_debug.js
 // === Body ===
+
+var ASM_CONSTS = {
+  4809880: () => { var mobileInput = document.getElementById('mobileInput'); mobileInput.focus(); },  
+ 4809963: () => { var mobileInput = document.getElementById('mobileInput'); mobileInput.blur(); }
+};
+function emsc_setup_mobile_key_input() { var input = document.getElementById('mobileInput'); input.addEventListener( 'input', function(e) { var inputChar = e.data; if (inputChar &&inputChar.length == 1) { Module._emsc_mobile_input(inputChar.charCodeAt(0)); } }); input.addEventListener( 'keydown', function(e) { Module._emsc_mobile_key_down(e.keyCode); }); input.addEventListener( 'keyup', function(e) { Module._emsc_mobile_key_up(e.keyCode); }); console.log('WGPU Backend -> emsc_setup_mobile_key_input(): Mobile keyboard input setup.'); }
+
 // end include: preamble.js
 
 
@@ -4033,6 +4040,45 @@ function dbg(...args) {
 
   var __emscripten_memcpy_js = (dest, src, num) => HEAPU8.copyWithin(dest, src, src + num);
 
+  var readEmAsmArgsArray = [];
+  var readEmAsmArgs = (sigPtr, buf) => {
+      // Nobody should have mutated _readEmAsmArgsArray underneath us to be something else than an array.
+      assert(Array.isArray(readEmAsmArgsArray));
+      // The input buffer is allocated on the stack, so it must be stack-aligned.
+      assert(buf % 16 == 0);
+      readEmAsmArgsArray.length = 0;
+      var ch;
+      // Most arguments are i32s, so shift the buffer pointer so it is a plain
+      // index into HEAP32.
+      while (ch = HEAPU8[sigPtr++]) {
+        var chr = String.fromCharCode(ch);
+        var validChars = ['d', 'f', 'i', 'p'];
+        assert(validChars.includes(chr), `Invalid character ${ch}("${chr}") in readEmAsmArgs! Use only [${validChars}], and do not specify "v" for void return argument.`);
+        // Floats are always passed as doubles, so all types except for 'i'
+        // are 8 bytes and require alignment.
+        var wide = (ch != 105);
+        wide &= (ch != 112);
+        buf += wide && (buf % 8) ? 4 : 0;
+        readEmAsmArgsArray.push(
+          // Special case for pointers under wasm64 or CAN_ADDRESS_2GB mode.
+          ch == 112 ? HEAPU32[((buf)>>2)] :
+          ch == 105 ?
+            HEAP32[((buf)>>2)] :
+            HEAPF64[((buf)>>3)]
+        );
+        buf += wide ? 8 : 4;
+      }
+      return readEmAsmArgsArray;
+    };
+  var runEmAsmFunction = (code, sigPtr, argbuf) => {
+      var args = readEmAsmArgs(sigPtr, argbuf);
+      assert(ASM_CONSTS.hasOwnProperty(code), `No EM_ASM constant found at address ${code}.  The loaded WebAssembly file is likely out of sync with the generated JavaScript.`);
+      return ASM_CONSTS[code](...args);
+    };
+  var _emscripten_asm_const_int = (code, sigPtr, argbuf) => {
+      return runEmAsmFunction(code, sigPtr, argbuf);
+    };
+
   var JSEvents = {
   removeAllEventListeners() {
         while (JSEvents.eventHandlers.length) {
@@ -6252,6 +6298,10 @@ var wasmImports = {
   /** @export */
   _emscripten_memcpy_js: __emscripten_memcpy_js,
   /** @export */
+  emsc_setup_mobile_key_input,
+  /** @export */
+  emscripten_asm_const_int: _emscripten_asm_const_int,
+  /** @export */
   emscripten_get_canvas_element_size: _emscripten_get_canvas_element_size,
   /** @export */
   emscripten_get_element_css_size: _emscripten_get_element_css_size,
@@ -6412,6 +6462,9 @@ var wasmImports = {
 };
 var wasmExports = createWasm();
 var ___wasm_call_ctors = createExportWrapper('__wasm_call_ctors', 0);
+var _emsc_mobile_input = Module['_emsc_mobile_input'] = createExportWrapper('emsc_mobile_input', 1);
+var _emsc_mobile_key_down = Module['_emsc_mobile_key_down'] = createExportWrapper('emsc_mobile_key_down', 1);
+var _emsc_mobile_key_up = Module['_emsc_mobile_key_up'] = createExportWrapper('emsc_mobile_key_up', 1);
 var _malloc = createExportWrapper('malloc', 1);
 var _free = createExportWrapper('free', 1);
 var _main = Module['_main'] = createExportWrapper('__main_argc_argv', 2);
@@ -6536,7 +6589,7 @@ var missingLibrarySymbols = [
   'readSockaddr',
   'writeSockaddr',
   'emscriptenLog',
-  'readEmAsmArgs',
+  'runMainThreadEmAsm',
   'jstoi_q',
   'getExecutableName',
   'listenOnce',
@@ -6709,6 +6762,8 @@ var unexportedSymbols = [
   'timers',
   'warnOnce',
   'readEmAsmArgsArray',
+  'readEmAsmArgs',
+  'runEmAsmFunction',
   'jstoi_s',
   'handleException',
   'keepRuntimeAlive',
