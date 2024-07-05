@@ -1,6 +1,7 @@
 #ifndef CIMGUI_IMPL_WGPU_H
 
 #define CIMGUI_IMPL_WGPU_H
+#include "emscripten/emscripten.h"
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
 #include <assert.h>
@@ -19,6 +20,8 @@
 #else
     #define ILOG(...)
 #endif
+
+#define MOBILE_COMPAT
 
 // ----------------------------------------------------------------------------
 
@@ -347,6 +350,56 @@ inline void ImGui_ImplWGPU_Shutdown(void) {
     IM_FREE(bd);
 }
 
+#ifdef MOBILE_COMPAT
+
+// Show mobile keyboard by focusing the input element
+static inline void emsc_show_mobile_keyboard() {
+    EM_ASM({
+        var mobileInput = document.getElementById('mobileInput');
+        mobileInput.focus();
+    });
+}
+
+// Hide mobile keyboard by blurring the input element
+static inline void emsc_hide_mobile_keyboard() {
+    EM_ASM({
+        var mobileInput = document.getElementById('mobileInput');
+        mobileInput.blur();
+    });
+}
+
+// Check for mobile keyboard events and show/hide keyboard
+static inline void ImGui_ImplWGPU_MobileKeyboard() {
+    ImGuiIO *io = igGetIO();
+
+    // Toggle mobile keyboard when needed
+    if (io->WantCaptureKeyboard) {
+        emsc_show_mobile_keyboard();
+    } else {
+        emsc_hide_mobile_keyboard();
+    }
+
+    // Show mobile keyboard when text input is needed
+    if (io->WantTextInput) {
+        emsc_show_mobile_keyboard();
+    } else {
+        emsc_hide_mobile_keyboard();
+    }
+
+    // Show mobile keyboard when input queue is not empty
+    if (io->InputQueueCharacters.Size > 0) {
+        emsc_show_mobile_keyboard();
+    }
+
+    // Hide mobile keyboard when mouse pos is set
+    // (when finger taps out of keyboard).
+    if (io->WantSetMousePos) {
+        emsc_hide_mobile_keyboard();
+    }
+}
+
+#endif
+
 // Prepare for a new frame
 inline void ImGui_ImplWGPU_NewFrame(void) {
     ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
@@ -358,6 +411,12 @@ inline void ImGui_ImplWGPU_NewFrame(void) {
     int width, height;
     emscripten_get_canvas_element_size("#canvas", &width, &height);
     io->DisplaySize = (ImVec2){(float)width, (float)height};
+
+// Check for input request and show mobile keyboard if needed by
+// manipulating the DOM
+#ifdef MOBILE_COMPAT
+    ImGui_ImplWGPU_MobileKeyboard();
+#endif
 
     // Update time step (targeting 60 FPS)
     double current_time = emscripten_get_now() / 1000.0;

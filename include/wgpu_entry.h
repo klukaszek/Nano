@@ -304,7 +304,6 @@ static void emsc_update_canvas_size() {
 
     LOG("WGPU Backend -> emsc_update_canvas_size(): %d %d\n", state.width,
         state.height);
-    LOG("WGPU Backend -> %p | %p | %p\n", &state, &state.width, &state.height);
 }
 
 static EM_BOOL emsc_size_changed(int event_type,
@@ -313,7 +312,8 @@ static EM_BOOL emsc_size_changed(int event_type,
     (void)event_type;
     (void)ui_event;
     // For some reason, the state pointer is not being passed to the callback
-    // for this function and I get an address of 0. So we can ignore the userdata.
+    // for this function and I get an address of 0. So we can ignore the
+    // userdata.
     wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
     return true;
@@ -530,6 +530,10 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     return EM_TRUE;
 }
 
+// Emscripten Mobile Keyboard Implementation
+// ----------------------------------------------------------------------------
+
+// Touch tap (single touch) event callbacks)
 static EM_BOOL emsc_touchstart_cb(int eventType, const EmscriptenTouchEvent *e,
                                   void *userData) {
     wgpu_state_t *state = (wgpu_state_t *)userData;
@@ -550,6 +554,7 @@ static EM_BOOL emsc_touchstart_cb(int eventType, const EmscriptenTouchEvent *e,
     return EM_TRUE;
 }
 
+// Touch release (single touch) event callbacks
 static EM_BOOL emsc_touchend_cb(int eventType, const EmscriptenTouchEvent *e,
                                 void *userData) {
     wgpu_state_t *state = (wgpu_state_t *)userData;
@@ -562,6 +567,7 @@ static EM_BOOL emsc_touchend_cb(int eventType, const EmscriptenTouchEvent *e,
     return EM_TRUE;
 }
 
+// Touch move (single touch) event callbacks
 static EM_BOOL emsc_touchmove_cb(int eventType, const EmscriptenTouchEvent *e,
                                  void *userData) {
     wgpu_state_t *state = (wgpu_state_t *)userData;
@@ -577,6 +583,63 @@ static EM_BOOL emsc_touchmove_cb(int eventType, const EmscriptenTouchEvent *e,
     }
     return EM_TRUE;
 }
+
+#ifdef MOBILE_COMPAT
+
+// Setup the mobile keyboard input for the canvas by manipulating the DOM
+// and assigning event callbacks to the input element from our C code.
+EM_JS(void, emsc_setup_mobile_key_input, (), {
+    var input = document.getElementById('mobileInput');
+    input.addEventListener(
+        'input', function(e) {
+            var inputChar = e.data;
+            if (inputChar &&inputChar.length == 1) {
+                Module._emsc_mobile_input(inputChar.charCodeAt(0));
+            }
+        });
+    input.addEventListener(
+        'keydown', function(e) { Module._emsc_mobile_key_down(e.keyCode); });
+    input.addEventListener(
+        'keyup', function(e) { Module._emsc_mobile_key_up(e.keyCode); });
+    console.log('WGPU Backend -> emsc_setup_mobile_key_input(): Mobile keyboard input setup.');
+});
+
+EMSCRIPTEN_KEEPALIVE
+void emsc_mobile_input(int charCode) {
+    // This function will be called for each character input
+    if (state.char_cb) {
+        state.char_cb(charCode);
+    }
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessCharEvent(charCode);
+#endif
+}
+
+EMSCRIPTEN_KEEPALIVE
+void emsc_mobile_key_down(int keyCode) {
+    // Convert keyCode to your WGPU key code if necessary
+    wgpu_keycode_t wgpu_key = emsc_translate_key((const char *)&keyCode);
+    if (state.key_down_cb) {
+        state.key_down_cb((int)wgpu_key);
+    }
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
+#endif
+}
+
+EMSCRIPTEN_KEEPALIVE
+void emsc_mobile_key_up(int keyCode) {
+    // Convert keyCode to your WGPU key code if necessary
+    wgpu_keycode_t wgpu_key = emsc_translate_key((const char *)&keyCode);
+    if (state.key_up_cb) {
+        state.key_up_cb((int)wgpu_key);
+    }
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, false);
+#endif
+}
+
+#endif // MOBILE_COMPAT
 
 static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
@@ -690,6 +753,11 @@ void wgpu_platform_start(wgpu_state_t *state) {
     emscripten_set_touchend_callback("#canvas", state, true, emsc_touchend_cb);
     emscripten_set_touchmove_callback("#canvas", state, true,
                                       emsc_touchmove_cb);
+
+#ifdef MOBILE_COMPAT
+    // Set up mobile keyboard input workaround for emscripten
+    emsc_setup_mobile_key_input();
+#endif
 
     state->instance = wgpuCreateInstance(0);
     assert(state->instance);
