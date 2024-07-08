@@ -268,7 +268,7 @@ static void frame(void) {
 
     // Update the font after our cmd_encoder has been released
     if (update_font) {
-        nano_set_font_size(nano_app.font_size);
+        nano_set_font_size(nano_app.font_info.font_size);
         // This is a low cost workaround to update the ImGui font size
         // ImGui_ImplWGPU_InvalidateDeviceObjects();
     }
