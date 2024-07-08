@@ -214,12 +214,14 @@ typedef struct nano_font_info_t {
     uint32_t font_count;
     uint32_t font_index;
     float font_size;
+    bool update_font;
 } nano_font_info_t;
 
 // Global Nano Font Info Struct to hold GUI fonts
 // I will probably implement my own font system in the future but this covers
 // imgui for now.
-// Leave the imfont pointer as NULL for now, we will set this in the init method for our imgui fonts
+// Leave the imfont pointer as NULL for now, we will set this in the init method
+// for our imgui fonts
 static nano_font_info_t nano_fonts = {
     .fonts =
         {
@@ -619,6 +621,9 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
         printf("NANO: Added ImGui Font: %s\n",
                cur_font->imfont->ConfigData->Name);
     }
+    
+    // Whenever we reach this point, we can assume that the font size has been updated
+    nano_app.font_info.update_font = false;
 
     // Set the default font to the first font in the list (JetBrains Mono Nerd)
     nano_set_font(nano_app.font_info.font_index);
@@ -629,10 +634,12 @@ void nano_set_font_size(float size) {
     nano_init_fonts(&nano_app.font_info, size); // They do the same thing
 }
 
-// A void function that draws a UI collection of the nano_app state
+// Stats / Telemetry
+// -----------------------------------------------
+
+// A function that draws a CImGui frame of the current nano_app state
 // Include collapsibles for all nested structs
-static bool nano_draw_debug_ui() {
-    bool update_font = false;
+static void nano_draw_debug_ui() {
     bool visible = true;
     bool closed = false;
     if (nano_app.show_debug) {
@@ -688,7 +695,7 @@ static bool nano_draw_debug_ui() {
             // size This requires our render pass to basically be completed
             // before we can do this however. This is a workaround for now.
             if (igIsItemDeactivatedAfterEdit()) {
-                update_font = true;
+                nano_app.font_info.update_font = true;
             }
             igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
         }
@@ -696,7 +703,10 @@ static bool nano_draw_debug_ui() {
                                        ImGuiTreeNodeFlags_CollapsingHeader)) {
             igText("Shader Pool Information");
             igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
-            if (nano_app.shader_pool.shader_count > 0) {
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+            if (nano_app.shader_pool.shader_count == 0) {
+                igText("No shaders found.\nAdd a shader to inspect it.");
+            } else {
                 igCombo_Str("Select Shader",
                             (int *)&nano_app.shader_pool.shader_count,
                             nano_app.shader_pool.shader_labels, 16);
@@ -708,11 +718,7 @@ static bool nano_draw_debug_ui() {
                              ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
     }
     igEnd();
-    return update_font;
 }
-
-// Stats / Telemetry
-// -----------------------------------------------
 
 // Calculate current frames per second
 static void nano_default_frame() {
