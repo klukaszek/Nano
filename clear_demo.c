@@ -171,8 +171,8 @@ static void frame(void) {
     WGPUCommandEncoderDescriptor cmd_encoder_desc = {
         .label = "Clear Screen Command Encoder",
     };
-    WGPUCommandEncoder cmd_encoder =
-        wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, &cmd_encoder_desc);
+    WGPUCommandEncoder cmd_encoder = wgpuDeviceCreateCommandEncoder(
+        nano_app.wgpu->device, &cmd_encoder_desc);
 
     // Start the Dear ImGui frame
     // --------------------------
@@ -189,8 +189,7 @@ static void frame(void) {
     // Render the debug UI. In the future, this will probably return
     // a struct with all critical flags that require updating after
     // the render pass has been completed.
-    bool update_font = false;
-    update_font = nano_draw_debug_ui();
+    nano_draw_debug_ui();
 
     igRender();
 
@@ -265,12 +264,10 @@ static void frame(void) {
 
     wgpuCommandBufferRelease(cmd_buffer);
     wgpuCommandEncoderRelease(cmd_encoder);
-
-    // Update the font after our cmd_encoder has been released
-    if (update_font) {
+    
+    // Update the font size once the cmd encoder has been released
+    if (nano_app.font_info.update_font) {
         nano_set_font_size(nano_app.font_info.font_size);
-        // This is a low cost workaround to update the ImGui font size
-        // ImGui_ImplWGPU_InvalidateDeviceObjects();
     }
 }
 
@@ -282,15 +279,14 @@ static void shutdown(void) {
 }
 
 int main(int argc, char *argv[]) {
-    wgpu_start(
-        &(wgpu_desc_t){
-            .title = "Solid Color Demo",
-            .width = 640,
-            .height = 480,
-            .init_cb = init,
-            .frame_cb = frame,
-            .shutdown_cb = shutdown,
-            .sample_count = 1,
-        });
+    wgpu_start(&(wgpu_desc_t){
+        .title = "Solid Color Demo",
+        .width = 640,
+        .height = 480,
+        .init_cb = init,
+        .frame_cb = frame,
+        .shutdown_cb = shutdown,
+        .sample_count = 1,
+    });
     return 0;
 }
