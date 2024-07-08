@@ -160,12 +160,8 @@ static void init(void) {
 
 static void frame(void) {
 
-    // Update Nano App
-    nano_default_frame();
-
-    // Update ImGui Display Size
-    ImGuiIO *io = igGetIO();
-    io->DisplaySize = (ImVec2){nano_app.wgpu->width, nano_app.wgpu->height};
+    // Update necessary Nano app state at beginning of frame
+    nano_start_frame();
 
     // Create a command encoder for our default Nano render pass action
     WGPUCommandEncoderDescriptor cmd_encoder_desc = {
@@ -190,7 +186,14 @@ static void frame(void) {
     // a struct with all critical flags that require updating after
     // the render pass has been completed.
     nano_draw_debug_ui();
-
+    
+    bool visible = true;
+    igSetNextWindowRefreshPolicy(ImGuiWindowRefreshFlags_RefreshOnFocus);
+    igSetNextWindowSize((ImVec2){400, 60}, ImGuiCond_FirstUseEver);
+    igSetNextWindowPos((ImVec2){400, 100}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+    igBegin("Clear", &visible, 0);
+    igSliderFloat4("RBGA Colour", (float *)&clear_color, 0.0f, 1.0f, "%.2f", 0);
+    igEnd();
     igRender();
 
     wgpuQueueWriteBuffer(wgpuDeviceGetQueue(nano_app.wgpu->device),
@@ -264,11 +267,9 @@ static void frame(void) {
 
     wgpuCommandBufferRelease(cmd_buffer);
     wgpuCommandEncoderRelease(cmd_encoder);
-    
-    // Update the font size once the cmd encoder has been released
-    if (nano_app.font_info.update_font) {
-        nano_set_font_size(nano_app.font_info.font_size);
-    }
+
+    // Change Nano app state at end of frame
+    nano_end_frame();
 }
 
 static void shutdown(void) {

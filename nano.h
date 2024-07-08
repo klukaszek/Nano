@@ -57,12 +57,16 @@
 //  }
 // ------------------------------------------------------------------
 
-// TODO: Fix font rendering resolution on WebGPU
-// TODO: Look into ligature support for fonts
-//       -> This is a bit tricky because ImGui does not support ligatures.
-//       -> We would have to implement this ourselves by writing a custom method
-//       to preprocess strings and replace ligatures with the correct unicode
-//       characters.
+// TODO: Get old compute example working with new nano and imgui
+// TODO: Implement an event queue for input event handing in the future
+// CONSIDER: Store the buffer indices in the shader struct for easy access
+// TODO: Rewrite the parser to actually use the provided grammar in the WebGPU
+//       spec
+// TODO: Implement render pipeline shaders into the shader pool
+
+// -------------------------------------------------
+//  NANO
+// -------------------------------------------------
 
 #define CIMGUI_WGPU
 #include "wgpu_entry.h"
@@ -87,74 +91,22 @@
     #define NANO_DEBUG_UI 1
 #endif
 
-// File IO
-// -----------------------------------------------
-// Function to read a shader into a string
-char *nano_read_file(const char *filename) {
-    assert(filename != NULL);
-
-    FILE *file = fopen(filename, "rb");
-    if (!file) {
-        fprintf(stderr, "NANO: nano_read_file() -> Could not open file %s\n",
-                filename);
-        return NULL;
-    }
-
-    // Get the length of the file so we can allocate the correct amount of
-    // memory for the shader string buffer
-    fseek(file, 0, SEEK_END);
-    size_t length = (size_t)ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // It is important to free the buffer after using it, it might be a good
-    // idea to implement an arena structure into the Nano STL for better
-    // handling of dynamic memory allocations.
-    char *buffer = (char *)malloc(length + 1);
-    if (!buffer) {
-        fprintf(stderr, "NANO: nano_read_file() -> Memory allocation failed\n");
-        fclose(file);
-        return NULL;
-    }
-
-    fread(buffer, 1, length, file);
-    buffer[length] = '\0';
-    fclose(file);
-
-    return buffer;
-}
-
-// -------------------------------------------------
-// Nano Font Data
-// -------------------------------------------------
-
-// Include fonts as header files
-#include "JetBrainsMonoNerdFontMono-Bold.h"
-#include "LilexNerdFontMono-Medium.h"
-#include "Roboto-Regular.h"
-
-// Total number of fonts included in nano
-#define NANO_NUM_FONTS 3
-
-// -------------------------------------------------
-//  NANO
-// -------------------------------------------------
-
 #define NANO_FAIL -1
 #define NANO_OK 0
 
-// Maximum number of compute shaders that can be stored in the shader pool
-#define NANO_MAX_COMPUTE 16
-
-// Maximum size of the hash table for each of the buffer pools.
-#define NANO_MAX_BUFFERS 256
-
+// Nano Pipeline Declarations
+// ---------------------------------------
 typedef struct nano_pipeline_layout_t {
     WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
     size_t num_layouts;
 } nano_pipeline_layout_t;
 
-// Nano Buffer Structs
+// Nano Buffer Declarations
 // ---------------------------------------
+
+// Maximum size of the hash table for each of the buffer pools.
+#define NANO_MAX_BUFFERS 256
+
 typedef struct nano_buffer_t {
     WGPUBuffer buffer;
     bool in_use;
@@ -176,8 +128,12 @@ typedef struct nano_buffer_pool_t {
     size_t total_size;
 } nano_buffer_pool_t;
 
-// Nano Shader Structs
+// Nano Shader Declarations
 // ----------------------------------------
+
+// Maximum number of compute shaders that can be stored in the shader pool
+#define NANO_MAX_SHADERS 16
+
 typedef struct nano_shader_t {
     uint32_t id;
     WGPUComputePipeline pipeline;
@@ -193,15 +149,24 @@ typedef struct ShaderNode {
 } ShaderNode;
 
 typedef struct nano_shader_pool_t {
-    ShaderNode shaders[NANO_MAX_COMPUTE];
+    ShaderNode shaders[NANO_MAX_SHADERS];
     size_t shader_count;
     // One string for all shader labels used for ImGui combo boxes
     // Only updated when a shader is added or removed from the pool
     char *shader_labels;
 } nano_shader_pool_t;
 
-// Nano Font Structs
+// Nano Font Declarations
 // -------------------------------------------
+
+// Include fonts as header files
+#include "JetBrainsMonoNerdFontMono-Bold.h"
+#include "LilexNerdFontMono-Medium.h"
+#include "Roboto-Regular.h"
+
+// Total number of fonts included in nano
+#define NANO_NUM_FONTS 3
+
 typedef struct nano_font_t {
     const unsigned char *ttf;
     size_t ttf_len;
@@ -217,12 +182,13 @@ typedef struct nano_font_info_t {
     bool update_font;
 } nano_font_info_t;
 
-// Global Nano Font Info Struct to hold GUI fonts
+// Static Nano Font Info Struct to hold GUI fonts
 // I will probably implement my own font system in the future but this covers
 // imgui for now.
-// Leave the imfont pointer as NULL for now, we will set this in the init method
+// Leave the imfont pointer for now, we will set this in the init method
 // for our imgui fonts
 static nano_font_info_t nano_fonts = {
+    // Add the fonts we wish to read from our font header files
     .fonts =
         {
             {
@@ -242,16 +208,20 @@ static nano_font_info_t nano_fonts = {
             },
         },
     .font_count = NANO_NUM_FONTS,
+    // Default font index
     .font_index = 0,
+    // Default font size
     .font_size = 16.0f,
 };
 
-// Nano State Structs
+// Nano State Declarations & Static Definition
 // -------------------------------------------
 
 typedef WGPURenderPassDescriptor nano_pass_action_t;
 typedef wgpu_state_t nano_wgpu_state_t;
 
+// This is the struct that will hold all of the running application data
+// In simple terms, this is the state of the application
 typedef struct nano_t {
     nano_wgpu_state_t *wgpu;
     bool show_debug;
@@ -289,6 +259,53 @@ uint32_t fnv1a_32(const char *key) {
         hash *= 16777619;
     }
     return hash;
+}
+
+/*
+ * Hash a shader string to create a unique ID for the shader
+ * @param shader - The shader string to hash (can be filename or shader code)
+ * @return uint32_t - The 32-bit unsigned integer hash value
+ */
+uint32_t nano_hash_shader(const char *shader) { return fnv1a_32(shader); }
+
+// Toggle flag to show debug UI
+void nano_toggle_debug() { nano_app.show_debug = !nano_app.show_debug; }
+
+// File IO
+// -----------------------------------------------
+
+// Function to read a shader into a string
+char *nano_read_file(const char *filename) {
+    assert(filename != NULL);
+
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        fprintf(stderr, "NANO: nano_read_file() -> Could not open file %s\n",
+                filename);
+        return NULL;
+    }
+
+    // Get the length of the file so we can allocate the correct amount of
+    // memory for the shader string buffer
+    fseek(file, 0, SEEK_END);
+    size_t length = (size_t)ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // It is important to free the buffer after using it, it might be a good
+    // idea to implement an arena structure into the Nano STL for better
+    // handling of dynamic memory allocations.
+    char *buffer = (char *)malloc(length + 1);
+    if (!buffer) {
+        fprintf(stderr, "NANO: nano_read_file() -> Memory allocation failed\n");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(buffer, 1, length, file);
+    buffer[length] = '\0';
+    fclose(file);
+
+    return buffer;
 }
 
 // Buffer Pool Functions
@@ -459,14 +476,14 @@ void nano_destroy_buffer(nano_buffer_pool_t *buffer_pool,
 // Simple hash function to hash the shader id to find the correct slot in the
 // shader pool
 static uint32_t nano_hash_shader_id(uint32_t shader_id) {
-    return shader_id % NANO_MAX_COMPUTE;
+    return shader_id % NANO_MAX_SHADERS;
 }
 
 // Initialize the shader pool with the correct default values
 // This function should be called before using the shader pool
 void nano_init_shader_pool(nano_shader_pool_t *table) {
     assert(table != NULL);
-    for (int i = 0; i < NANO_MAX_COMPUTE; i++) {
+    for (int i = 0; i < NANO_MAX_SHADERS; i++) {
         table->shaders[i].occupied = false;
     }
     table->shader_count = 0;
@@ -479,12 +496,12 @@ static int nano_find_shader_slot(nano_shader_pool_t *table,
     uint32_t index = hash;
 
     // Linear probing
-    for (int i = 0; i < NANO_MAX_COMPUTE; i++) {
+    for (int i = 0; i < NANO_MAX_SHADERS; i++) {
         nano_shader_t *shader = &table->shaders[index].shader_entry;
         if (!shader->in_use || shader->id == shader_id) {
             return (int)index;
         }
-        index = (index + 1) % NANO_MAX_COMPUTE;
+        index = (index + 1) % NANO_MAX_SHADERS;
     }
 
     // If we get here, the shader pool is full
@@ -514,7 +531,7 @@ static char *_nano_update_shader_labels() {
     }
 
     // Allocate memory for the shader labels (64 characters max per shader)
-    char *labels = (char *)malloc(64 * NANO_MAX_COMPUTE);
+    char *labels = (char *)malloc(64 * NANO_MAX_SHADERS);
     if (labels == NULL) {
         fprintf(stderr, "NANO: nano_get_shader_labels() -> Memory allocation "
                         "failed\n");
@@ -522,7 +539,7 @@ static char *_nano_update_shader_labels() {
     }
 
     // Concatenate all shader labels into a single string
-    for (int i = 0; i < NANO_MAX_COMPUTE; i++) {
+    for (int i = 0; i < NANO_MAX_SHADERS; i++) {
         if (nano_app.shader_pool.shaders[i].occupied) {
             char *label = nano_app.shader_pool.shaders[i].shader_entry.label;
             strncat(labels, label, strlen(label));
@@ -563,16 +580,6 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
 
     _nano_update_shader_labels();
 }
-
-/*
- * Hash a shader string to create a unique ID for the shader
- * @param shader - The shader string to hash (can be filename or shader code)
- * @return uint32_t - The 32-bit unsigned integer hash value
- */
-uint32_t nano_hash_shader(const char *shader) { return fnv1a_32(shader); }
-
-// Toggle flag to show debug UI
-void nano_toggle_debug() { nano_app.show_debug = !nano_app.show_debug; }
 
 // Font Methods
 // -----------------------------------------------
@@ -621,8 +628,9 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
         printf("NANO: Added ImGui Font: %s\n",
                cur_font->imfont->ConfigData->Name);
     }
-    
-    // Whenever we reach this point, we can assume that the font size has been updated
+
+    // Whenever we reach this point, we can assume that the font size has been
+    // updated
     nano_app.font_info.update_font = false;
 
     // Set the default font to the first font in the list (JetBrains Mono Nerd)
@@ -718,22 +726,6 @@ static void nano_draw_debug_ui() {
                              ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
     }
     igEnd();
-}
-
-// Calculate current frames per second
-static void nano_default_frame() {
-
-    // Get the frame time and calculate the frames per second with delta
-    // time
-    nano_app.frametime = wgpu_frametime();
-    // Update the dimensions of the window
-    nano_app.wgpu->width = wgpu_width();
-    nano_app.wgpu->height = wgpu_height();
-    ImGuiIO *io = igGetIO();
-    io->DisplaySize =
-        (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
-    // Calculate the frames per second
-    nano_app.fps = 1000 / nano_app.frametime;
 }
 
 // Shader Parsing (using the wgsl-parser library)
@@ -1127,3 +1119,37 @@ static void nano_default_cleanup(void) { wgpu_stop(); }
 // The event function is called by sokol_app whenever an event occurs
 // and it passes the event to simgui_handle_event to handle the event
 static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
+
+// -------------------------------------------------------------------------------
+// Nano Frame Update Functions
+// nano_start_frame() - Called at the beginning of the frame callback method
+// nano_end_frame() - Called at the end of the frame callback method
+// These functions are used to update the application state to ensure that the
+// app is ready to render the next frame.
+// -------------------------------------------------------------------------------
+
+// Calculate current frames per second
+static void nano_start_frame() {
+
+    // Update the dimensions of the window
+    nano_app.wgpu->width = wgpu_width();
+    nano_app.wgpu->height = wgpu_height();
+
+    // Set the display size for ImGui
+    ImGuiIO *io = igGetIO();
+    io->DisplaySize =
+        (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
+
+    // Get the frame time and calculate the frames per second with delta
+    // time
+    nano_app.frametime = wgpu_frametime();
+    // Calculate the frames per second
+    nano_app.fps = 1000 / nano_app.frametime;
+}
+
+static void nano_end_frame() {
+    // Update the font size if the flag is set
+    if (nano_app.font_info.update_font) {
+        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+    }
+}

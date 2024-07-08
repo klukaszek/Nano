@@ -95,19 +95,6 @@ typedef enum {
     WGPU_KEY_F10,
     WGPU_KEY_F11,
     WGPU_KEY_F12,
-    WGPU_KEY_F13,
-    WGPU_KEY_F14,
-    WGPU_KEY_F15,
-    WGPU_KEY_F16,
-    WGPU_KEY_F17,
-    WGPU_KEY_F18,
-    WGPU_KEY_F19,
-    WGPU_KEY_F20,
-    WGPU_KEY_F21,
-    WGPU_KEY_F22,
-    WGPU_KEY_F23,
-    WGPU_KEY_F24,
-    WGPU_KEY_F25,
     WGPU_KEY_KP_0,
     WGPU_KEY_KP_1,
     WGPU_KEY_KP_2,
@@ -199,6 +186,7 @@ static wgpu_state_t state;
 void wgpu_platform_start(wgpu_state_t *state);
 void wgpu_swapchain_init(wgpu_state_t *state);
 static double emsc_get_frametime(void);
+static bool emsc_fullscreen(char *id);
 
 void wgpu_start(const wgpu_desc_t *desc) {
     assert(desc);
@@ -278,8 +266,24 @@ static WGPUTextureFormat wgpu_get_depth_format(void) {
     }
 }
 
+// Expose a function to toggle fullscreen so we can use any key to toggle
+static bool wgpu_toggle_fullscreen(char *id) {
+    return emsc_fullscreen(id) == EMSCRIPTEN_RESULT_SUCCESS;
+}
+
 // Emscripten specific code
 // ----------------------------------------------------------------------------
+
+// Emscripten Fullscreen Implementation
+static bool emsc_fullscreen(char *id) {
+    EMSCRIPTEN_RESULT res = EMSCRIPTEN_RESULT_FAILED;
+    if (!id) {
+        res = emscripten_request_fullscreen("#canvas", 1);
+    } else {
+        res = emscripten_request_fullscreen(id, 1);
+    }
+    return res;
+}
 
 static double emsc_get_frametime(void) {
     double now = emscripten_get_now();
@@ -393,6 +397,12 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
                                void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
+
+    // Handle fullscreen toggle above all other key events
+    // to allow the user to toggle fullscreen with F11
+    if (strcmp(ev->code, "F11") == 0) {
+        return emsc_fullscreen("#canvas") == EMSCRIPTEN_RESULT_SUCCESS;
+    }
 
     // Allow browser shortcuts
     if (ev->ctrlKey || ev->altKey || ev->metaKey) {
