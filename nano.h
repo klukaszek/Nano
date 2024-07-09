@@ -44,7 +44,6 @@
 // }
 // ------------------------------------------------------------------
 
-// TODO: Implement clear demo into nano as default state
 // TODO: Get old compute example working with new nano and imgui
 // TODO: Implement an event queue for input event handing in the future
 // TODO: Store the buffer indices in the shader struct for easy access
@@ -58,7 +57,6 @@
 
 #define CIMGUI_WGPU
 #include "wgpu_entry.h"
-#include <emscripten/html5.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <webgpu/webgpu.h>
@@ -123,9 +121,15 @@ typedef struct nano_buffer_pool_t {
 // Maximum number of compute shaders that can be stored in the shader pool
 #define NANO_MAX_SHADERS 16
 
+enum nano_shader_type_t { NANO_SHADER_COMPUTE = 0, NANO_SHADER_RENDER = 1 };
+
 typedef struct nano_shader_t {
     uint32_t id;
-    WGPUComputePipeline pipeline;
+    enum nano_shader_type_t type;
+    union {
+        WGPUComputePipeline compute;
+        WGPURenderPipeline render;
+    } pipeline;
     nano_pipeline_layout_t pipeline_layout;
     bool in_use;
     char label[64];
@@ -552,8 +556,15 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
     table->shaders[index].occupied = false;
 
     // Release the pipeline
-    if (shader->pipeline) {
-        wgpuComputePipelineRelease(shader->pipeline);
+    if (shader->pipeline.compute || shader->pipeline.render) {
+
+        if (shader->type == NANO_SHADER_COMPUTE) {
+            // Release the compute pipeline
+            wgpuComputePipelineRelease(shader->pipeline.compute);
+        } else if (shader->type == NANO_SHADER_RENDER) {
+            // Release the render pipeline
+            wgpuRenderPipelineRelease(shader->pipeline.render);
+        }
     }
 
     // Release the shader shader_source
