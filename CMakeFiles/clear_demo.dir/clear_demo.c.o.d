@@ -63,4 +63,12 @@ samples/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/include/wgsl-parser/webgpu.h \
   /home/runner/work/Nano/Nano/include/assets/fonts/JetBrainsMonoNerdFontMono-Bold.h \
   /home/runner/work/Nano/Nano/include/assets/fonts/LilexNerdFontMono-Medium.h \
-  /home/runner/work/Nano/Nano/include/assets/fonts/Roboto-Regular.h
+  /home/runner/work/Nano/Nano/include/assets/fonts/Roboto-Regular.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/dirent.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/dirent.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/sys/types.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/endian.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/sys/select.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/compat/sys/stat.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/sys/stat.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/stat.h
