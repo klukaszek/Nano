@@ -226,6 +226,7 @@ static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
                                        WGPUTextureFormat depth_stencil_format,
+                                       float res_X, float res_Y,
                                        float width, float height);
 static inline void ImGui_ImplWGPU_Shutdown(void);
 static inline void ImGui_ImplWGPU_NewFrame(void);
@@ -246,7 +247,7 @@ static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta);
 static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
                                                           bool down);
 static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y);
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float width, float height);
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y, float width, float height);
 
 // Function Implementations
 // ----------------------------------------------------------------------------
@@ -282,6 +283,7 @@ static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
                                        WGPUTextureFormat depth_stencil_format,
+                                       float res_x, float res_y,
                                        float width, float height) {
     // Inject CImGui into the WGPU context so we can use it for UI
     // Setup Dear ImGui for WGPU
@@ -335,7 +337,7 @@ static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
     bd->IndexBufferSize = 10000;
 
     // Set up ImGui style scaling
-    ImGui_ImplWGPU_ScaleUIToCanvas(width, height);
+    ImGui_ImplWGPU_ScaleUIToCanvas(res_x, res_y, width, height);
 
     return true;
 }
@@ -856,13 +858,11 @@ static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta) {
     ImGuiIO_AddMouseWheelEvent(io, 0.0f, delta);
 }
 
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float width, float height) {
-    const float base_width = 1920.0f;
-    const float base_height = 1080.0f;
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y, float width, float height) {
 
     // Calculate scale factor based on expected resolution
-    float scale_x = base_width / width;
-    float scale_y = base_height / height;
+    float scale_x = res_x / width;
+    float scale_y = res_x / height;
 
     // Set scale factor and ensure it is at least 1.0 (relative to 1080p)
     // This should be changed to the target resolution if we can get it

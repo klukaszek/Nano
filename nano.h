@@ -13,53 +13,41 @@
 //  To create a new application, simply include this header file in your
 //  main.c file and define the following functions and macros:
 //
-//  #include "nano.h"
+// #include "nano.h"
 //
-//  static void init() {
-//      // Make sure to call nano_basic_init() to initialize the sokol app
-//      nano_basic_init();
+// static void init(void) { nano_default_init(); }
 //
-//      // Add any additional initialization code here
-//      ...
-//  }
+// static void frame(void) {
 //
-//  static void cleanup() {
-//      // Add any cleanup code here
-//      ...
-//      nano_basic_cleanup();
-//  }
+//     // Update necessary Nano app state at beginning of frame
+//     // Get the current command encoder (this is nano_app.wgpu->cmd_encoder)
+//     // A new command encoder is created with each frame
+//     WGPUCommandEncoder cmd_encoder = nano_start_frame();
 //
-//  static void event(const sapp_event *e) {
-//      nano_basic_event(e);
-//      // Add any event handling code here
-//      ...
-//  }
+//     // Change Nano app state at end of frame
+//     nano_end_frame();
+// }
 //
-//  static void frame() - This function is called every frame and is where you
-//  will
-//            update your application logic and render your scene.
+// static void shutdown(void) { nano_default_cleanup(); }
 //
-//  // Define the sokol app description and return it to start the app
-//  sapp_desc sokol_main(int argc, char *argv[]) {
-//      // Define the sokol app description
-//      return (sapp_desc){
-//      .init_cb = nano_init,
-//      .frame_cb = frame,
-//      .cleanup_cb = nano_cleanup,
-//      .event_cb = nano_event,
-//      .icon.sokol_default = true,
-//      .logger.func = slog_func,
-//      .width = 800,
-//      .height = 600,
-//      .window_title = "nano app",
-//      .high_dpi = true,
-//      }
-//  }
+// int main(int argc, char *argv[]) {
+//     wgpu_start(&(wgpu_desc_t){
+//         .title = "Solid Color Demo",
+//         .width = 640,
+//         .height = 480,
+//         .init_cb = init,
+//         .frame_cb = frame,
+//         .shutdown_cb = shutdown,
+//         .sample_count = 1,
+//     });
+//     return 0;
+// }
 // ------------------------------------------------------------------
 
+// TODO: Implement clear demo into nano as default state
 // TODO: Get old compute example working with new nano and imgui
 // TODO: Implement an event queue for input event handing in the future
-// CONSIDER: Store the buffer indices in the shader struct for easy access
+// TODO: Store the buffer indices in the shader struct for easy access
 // TODO: Rewrite the parser to actually use the provided grammar in the WebGPU
 //       spec
 // TODO: Implement render pipeline shaders into the shader pool
@@ -70,6 +58,7 @@
 
 #define CIMGUI_WGPU
 #include "wgpu_entry.h"
+#include <emscripten/html5.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <webgpu/webgpu.h>
@@ -650,82 +639,184 @@ void nano_set_font_size(float size) {
 static void nano_draw_debug_ui() {
     bool visible = true;
     bool closed = false;
-    if (nano_app.show_debug) {
-        igSetNextWindowSize((ImVec2){400, 400}, ImGuiCond_FirstUseEver);
-        igBegin("Nano Debug", &nano_app.show_debug, 0);
-        if (igCollapsingHeader_BoolPtr("About Nano", &visible,
-                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
-            igTextWrapped(
-                "Nano is a simple solution for starting a new WebGPU based"
-                " application. Nano is designed to use "
-                "C as its primary programming language. The only exception is "
-                "CImGui's "
-                "bindings to the original C++ implementation of Dear ImGui, "
-                "but "
-                "CImGui "
-                "works fine. Nano is currently being rebuilt from the ground "
-                "up so "
-                "it "
-                "is not ready for anything yet.");
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-        }
-        if (igCollapsingHeader_BoolPtr("Nano Debug Information", &visible,
-                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
-            igText("Nano Debug Information");
-            igSeparator();
-            igText("Frame Time: %.2f ms", nano_app.frametime);
-            igText("Frames Per Second: %.2f", nano_app.fps);
-            igText("Window Dimensions: (%d, %d)", nano_app.wgpu->width,
-                   nano_app.wgpu->height);
-            igSeparator();
-            igText("Buffer Pool Information");
-            igText("Buffer Count: %zu", nano_app.buffer_pool.buffer_count);
-            igText("Total Buffer Size: %zu", nano_app.buffer_pool.total_size);
-            igSeparator();
-            igText("Shader Pool Information");
-            igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-        }
-        if (igCollapsingHeader_BoolPtr("Nano Font Information", &visible,
-                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
-            nano_font_info_t *font_info = &nano_app.font_info;
-            igText("Font Index: %d", font_info->font_index);
-            igText("Font Size: %.2f", font_info->font_size);
-            if (igCombo_Str(
-                    "Select Font", (int *)&font_info->font_index,
-                    "JetBrains Mono Nerd Font\0Lilex Nerd Font\0Roboto\0\0",
-                    3)) {
-                nano_set_font(font_info->font_index);
-            }
-            igSliderFloat("Font Size", (float *)&font_info->font_size, 8.0f,
-                          32.0f, "%.2f", 1.0f);
-            // Once the slider is released, set the flag for editing the font
-            // size This requires our render pass to basically be completed
-            // before we can do this however. This is a workaround for now.
-            if (igIsItemDeactivatedAfterEdit()) {
-                nano_app.font_info.update_font = true;
-            }
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-        }
-        if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", &visible,
-                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
-            igText("Shader Pool Information");
-            igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-            if (nano_app.shader_pool.shader_count == 0) {
-                igText("No shaders found.\nAdd a shader to inspect it.");
-            } else {
-                igCombo_Str("Select Shader",
-                            (int *)&nano_app.shader_pool.shader_count,
-                            nano_app.shader_pool.shader_labels, 16);
-            }
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-        }
-        igInputTextMultiline("Test Editor", "Hello, World!", 1024,
-                             (ImVec2){300, 200},
-                             ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
+    WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
+    static bool show_demo = false;
+
+    // Necessary to call before starting a new frame
+    // Will be refactored into a proper nano_cimgui_* function
+    ImGui_ImplWGPU_NewFrame();
+    igNewFrame();
+
+    igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
+    igBegin("Nano Debug", &nano_app.show_debug, 0);
+    if (igButton("Open ImGui Demo Window", (ImVec2){200, 0})) {
+        show_demo = !show_demo;
     }
+
+    // Show the ImGui demo window based on the show_demo flag
+    if (show_demo)
+        igShowDemoWindow(&show_demo);
+
+    if (igCollapsingHeader_BoolPtr("About Nano", &visible,
+                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+        igTextWrapped(
+            "Nano is a simple solution for starting a new WebGPU based"
+            " application. Nano is designed to use "
+            "C as its primary programming language. The only exception is "
+            "CImGui's bindings to the original C++ implementation of Dear "
+            "ImGui, but CImGui works fine. Nano is currently being rebuilt "
+            "from the ground up so it is not ready for anything yet.");
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    }
+
+    // Nano Render Information
+    if (igCollapsingHeader_BoolPtr("Nano Render Information", &visible,
+                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+        igText("Nano Render Information");
+        igSeparator();
+        igText("Frame Time: %.2f ms", nano_app.frametime);
+        igText("Frames Per Second: %.2f", nano_app.fps);
+        igText("Render Resolution: (%d, %d)", nano_app.wgpu->width,
+               nano_app.wgpu->height);
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    }
+
+    // Nano Font Information
+    if (igCollapsingHeader_BoolPtr("Nano Font Information", &visible,
+                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+        nano_font_info_t *font_info = &nano_app.font_info;
+        igText("Font Index: %d", font_info->font_index);
+        igText("Font Size: %.2f", font_info->font_size);
+        if (igCombo_Str("Select Font", (int *)&font_info->font_index,
+                        "JetBrains Mono Nerd Font\0Lilex Nerd Font\0Roboto\0\0",
+                        3)) {
+            nano_set_font(font_info->font_index);
+        }
+        igSliderFloat("Font Size", (float *)&font_info->font_size, 8.0f, 32.0f,
+                      "%.2f", 1.0f);
+        // Once the slider is released, set the flag for editing the font
+        // size This requires our render pass to basically be completed
+        // before we can do this however. This is a workaround for now.
+        if (igIsItemDeactivatedAfterEdit()) {
+            nano_app.font_info.update_font = true;
+        }
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    }
+
+    // Shader Pool Information
+    if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", &visible,
+                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+        igText("Shader Pool Information");
+        igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        if (nano_app.shader_pool.shader_count == 0) {
+            igText("No shaders found.\nAdd a shader to inspect it.");
+        } else {
+            igCombo_Str("Select Shader",
+                        (int *)&nano_app.shader_pool.shader_count,
+                        nano_app.shader_pool.shader_labels, 16);
+        }
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    }
+
+    // Buffer Pool Information
+    if (igCollapsingHeader_BoolPtr("Nano Buffer Pool Information", &visible,
+                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+        igText("Shader Buffer Pool Information");
+        igText("Buffer Count: %zu", nano_app.buffer_pool.buffer_count);
+        igText("Total Size: %zu", nano_app.buffer_pool.total_size);
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        igText("Staging Buffer Pool Information");
+        igText("Buffer Count: %zu", nano_app.staging_pool.buffer_count);
+        igText("Total Size: %zu", nano_app.staging_pool.total_size);
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    }
+
+    igInputTextMultiline("Test Editor", "Hello, World!", 1024,
+                         (ImVec2){300, 200}, ImGuiInputTextFlags_AllowTabInput,
+                         NULL, NULL);
+
+    igSliderFloat4("RBGA Colour",
+                   (float *)&nano_app.wgpu->default_pipeline_info.clear_color,
+                   0.0f, 1.0f, "%.2f", 0);
+
     igEnd();
+    igRender();
+
+    float *clear_color =
+        (float *)&nano_app.wgpu->default_pipeline_info.clear_color;
+
+    // Write the uniform buffer with the clear color for the frame
+    wgpuQueueWriteBuffer(
+        wgpuDeviceGetQueue(nano_app.wgpu->device),
+        nano_app.wgpu->default_pipeline_info.uniform_buffer, 0,
+        &nano_app.wgpu->default_pipeline_info.clear_color,
+        sizeof(nano_app.wgpu->default_pipeline_info.clear_color));
+
+    // Set the ImGui encoder to our current encoder
+    // This is necessary to render the ImGui draw data
+    ImGui_ImplWGPU_SetEncoder(cmd_encoder);
+
+    // --------------------------
+    // End of the Dear ImGui frame
+
+    // Get the current swapchain texture view
+    WGPUTextureView back_buffer_view = wgpu_get_render_view();
+    if (!back_buffer_view) {
+        printf("Failed to get current swapchain texture view.\n");
+        return;
+    }
+
+    // Create a generic render pass color attachment
+    WGPURenderPassColorAttachment color_attachment = {
+        .view = back_buffer_view,
+        // We set the depth slice to 0xFFFFFFFF to indicate that the depth
+        // slice is not used.
+        .depthSlice = ~0u,
+        // If our view is a texture view (MSAA Samples > 1), we need to
+        // resolve the texture to the swapchain texture
+        .resolveTarget =
+            state.desc.sample_count > 1
+                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
+                : NULL,
+        .loadOp = WGPULoadOp_Clear,
+        .storeOp = WGPUStoreOp_Store,
+        .clearValue = {.r = clear_color[0],
+                       .g = clear_color[1],
+                       .b = clear_color[2],
+                       .a = clear_color[3]},
+    };
+
+    WGPURenderPassDescriptor render_pass_desc = {
+        .label = "Nano Debug Render Pass",
+        .colorAttachmentCount = 1,
+        .colorAttachments = &color_attachment,
+        .depthStencilAttachment = NULL,
+    };
+
+    WGPURenderPassEncoder render_pass =
+        wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
+    if (!render_pass) {
+        printf("NANO: Failed to begin default render pass encoder.\n");
+        wgpuCommandEncoderRelease(cmd_encoder);
+        return;
+    }
+
+    // Set our render pass encoder to use our pipeline and
+    wgpuRenderPassEncoderSetBindGroup(
+        render_pass, 0, nano_app.wgpu->default_pipeline_info.bind_group, 0,
+        NULL);
+    wgpuRenderPassEncoderSetPipeline(
+        render_pass, nano_app.wgpu->default_pipeline_info.pipeline);
+    wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
+
+    // Render ImGui Draw Data
+    // This will be refactored into a nano_cimgui_render function
+    // I am thinking of making all nano + cimgui functionality optional using
+    // macros
+    ImGui_ImplWGPU_RenderDrawData(igGetDrawData(), render_pass);
+
+    wgpuRenderPassEncoderEnd(render_pass);
 }
 
 // Shader Parsing (using the wgsl-parser library)
@@ -1107,6 +1198,13 @@ static void nano_default_init(void) {
     // application with wgpu_start().
     nano_app.wgpu = wgpu_get_state();
 
+    // Once the device is created, we can create the default pipeline for
+    // rendering a simple screen quad with a texture
+
+    // TODO: The buffers and shaders for this pipeline should eventually be
+    // added to added to our buffer and shader pools accordingly
+    wgpu_init_default_pipeline();
+
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
 
@@ -1129,7 +1227,7 @@ static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 // -------------------------------------------------------------------------------
 
 // Calculate current frames per second
-static void nano_start_frame() {
+static WGPUCommandEncoder nano_start_frame() {
 
     // Update the dimensions of the window
     nano_app.wgpu->width = wgpu_width();
@@ -1145,11 +1243,48 @@ static void nano_start_frame() {
     nano_app.frametime = wgpu_frametime();
     // Calculate the frames per second
     nano_app.fps = 1000 / nano_app.frametime;
+
+    // Start the frame and return the command encoder
+    // This command encoder should be passed around from
+    // function to function to perform multiple render passes
+    // We can then present the frame in nano_end_frame() by
+    // telling the swapchain to present the frame.
+    WGPUCommandEncoderDescriptor cmd_encoder_desc = {
+        .label = "Nano Frame Command Encoder",
+    };
+    // Set the command encoder for the app state
+    nano_app.wgpu->cmd_encoder = wgpuDeviceCreateCommandEncoder(
+        nano_app.wgpu->device, &cmd_encoder_desc);
+
+    return nano_app.wgpu->cmd_encoder;
 }
 
 static void nano_end_frame() {
+
+    // Draw the debug UI
+    if (nano_app.show_debug) {
+        nano_draw_debug_ui();
+        // Release the buffer since we no longer need itebug_ui();
+    }
+
     // Update the font size if the flag is set
     if (nano_app.font_info.update_font) {
         nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
     }
+
+    // Create a command buffer so that we can submit the command encoder
+    WGPUCommandBufferDescriptor cmd_buffer_desc = {
+        .label = "Command Buffer",
+    };
+
+    // Finish the command encoder and submit the command buffer
+    WGPUCommandBuffer cmd_buffer =
+        wgpuCommandEncoderFinish(nano_app.wgpu->cmd_encoder, &cmd_buffer_desc);
+    wgpuQueueSubmit(wgpuDeviceGetQueue(nano_app.wgpu->device), 1, &cmd_buffer);
+
+    // Release the buffer since we no longer need it
+    wgpuCommandBufferRelease(cmd_buffer);
+
+    // Release the command encoder after the frame is done
+    wgpuCommandEncoderRelease(nano_app.wgpu->cmd_encoder);
 }
