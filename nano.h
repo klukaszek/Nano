@@ -44,11 +44,11 @@
 // }
 // ------------------------------------------------------------------
 
+// TODO: Store the buffer indices in the shader struct for easy access
 // TODO: Add a button to reload the shader in the shader pool once it has
 //       been successfully validated. This will allow for quick iteration
 //       on the shader code.
 // TODO: Implement an event queue for input event handing in the future
-// TODO: Store the buffer indices in the shader struct for easy access
 // TODO: Rewrite the parser to actually use the provided grammar in the WebGPU
 //       spec
 // TODO: Implement render pipeline shaders into the shader pool

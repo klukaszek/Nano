@@ -3,7 +3,7 @@ project(Nano)
 
 set(CMAKE_EXECUTABLE_SUFFIX ".html")
 set(EMCC_COMPILER_FLAGS "-s USE_WEBGPU=1 -s FULL_ES2=1 -O3")
-set(EMCC_LINKER_FLAGS "-s NO_DISABLE_EXCEPTION_CATCHING=1 -s USE_WEBGPU=1 -s FULL_ES2=1 -s WASM=1")
+set(EMCC_LINKER_FLAGS "-s USE_WEBGPU=1 -s FULL_ES2=1 -s WASM=1")
 
 # Copy the assets to the build directory
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s --preload-file ${CMAKE_SOURCE_DIR}/include/assets@/")
