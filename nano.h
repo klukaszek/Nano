@@ -44,15 +44,13 @@
 // }
 // ------------------------------------------------------------------
 
-// TODO URGENT: Complete new shader parser and implement in nano
-// TODO: Store the buffer indices in the shader struct for easy access
+// TODO: Test compute pipeline creation in the shader pool
+// TODO: Test render pipeline creation in the shader pool
+// TODO: Move default shader for debug UI into the shader pool
 // TODO: Add a button to reload the shader in the shader pool once it has
 //       been successfully validated. This will allow for quick iteration
 //       on the shader code.
 // TODO: Implement an event queue for input event handing in the future
-// TODO: Rewrite the parser to actually use the provided grammar in the WebGPU
-//       spec
-// TODO: Implement render pipeline shaders into the shader pool
 
 // -------------------------------------------------
 //  NANO
