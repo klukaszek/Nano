@@ -3,7 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ASSET_PATH "/home/kyle/Projects/fips-projects/wgsl-parser/assets/%s"
+#define ASSET_PATH "./assets/%s"
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -27,35 +27,25 @@ int main(int argc, char **argv) {
     }
 
     char *filename = argv[1];
-    char *shader;
+    char *shader_source;
 
     char path[256];
     snprintf(path, 256, ASSET_PATH, filename);
     printf("Path: %s\n", path);
 
-    shader = read_file(path);
-
-    if (!shader) {
+    shader_source = read_file(path);
+    if (!shader_source) {
         fprintf(stderr, "Could not read file %s\n", filename);
         return 1;
     }
-    
-    // Initialize the compute info struct
-    ComputeInfo info = {
-        .workgroup_size = {1, 1, 1},
-        .groups = {{0}},
-        .entry = {0},
-    };
 
-    int status = parse_wgsl_compute(shader, &info);
-    if (status < 0) {
-        fprintf(stderr, "Error parsing WGSL\n");
-        return 1;
-    }
+    Parser parser;
+    init_parser(&parser, shader_source);
 
-    print_compute_info(&info);
+    ShaderInfo shader_info = {0};
+    parse_shader(&parser, &shader_info);
 
-    free(shader);
+    print_shader_info(&shader_info);
 
-    return 0;
+    free(shader_source);
 }
