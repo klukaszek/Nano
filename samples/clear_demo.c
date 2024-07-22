@@ -12,7 +12,7 @@ typedef struct {
 char SHADER_PATH[] = "/shaders/wgpu/%s";
 
 size_t buffer_size;
-// WGPUBuffer staging_buffer;
+WGPUBuffer staging_buffer;
 // nano_shader_t *shader;
 // WGPUPipelineLayout pipeline_layout;
 // WGPUComputePipeline compute_pipeline;
@@ -123,17 +123,26 @@ static void init(void) {
 
     printf("Shader ID: %d\n", shader->id);
 
-    // // Buffer descriptor for the staging buffer until I come up with a solution
-    // // for staging buffers
-    // WGPUBufferDescriptor staging_desc = {
-    //     .size = buffer_size,
-    //     // We must set the usage so that we can read the data
-    //     // from the buffer back to the CPU from the GPU.
-    //     .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead,
-    // };
-    //
-    // // Create the staging buffer to read results back to the CPU
-    // staging_buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &staging_desc);
+    // Get the input buffer from the shader
+    WGPUBuffer input_buffer = nano_get_buffer(shader, 0, 0);
+
+    // Get the output buffer from the shader
+    WGPUBuffer output_buffer_storage = nano_get_buffer(shader, 0, 1);
+
+    printf("Input Buffer: %d\n", input_buffer);
+    printf("Output Buffer: %d\n", output_buffer_storage);
+
+    // Buffer descriptor for the staging buffer until I come up with a solution
+    // for staging buffers
+    WGPUBufferDescriptor staging_desc = {
+        .size = buffer_size,
+        // We must set the usage so that we can read the data
+        // from the buffer back to the CPU from the GPU.
+        .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead,
+    };
+    
+    // Create the staging buffer to read results back to the CPU
+    staging_buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &staging_desc);
     //
     // // Get the input buffer from the buffer pool
     // input_buffer = nano_get_buffer(&nano_app.buffer_pool, shader->id, 0, 0);
