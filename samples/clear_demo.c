@@ -2,76 +2,75 @@
 #define NANO_DEBUG
 #include "nano.h"
 #include <dirent.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 typedef struct {
     float value;
 } Data;
 
-char SHADER_PATH[] = "/shaders/wgpu/%s";
+char SHADER_PATH[] = "/wgpu-shaders/%s";
 
 size_t buffer_size;
-WGPUBuffer staging_buffer;
-// nano_shader_t *shader;
-// WGPUPipelineLayout pipeline_layout;
-// WGPUComputePipeline compute_pipeline;
-// WGPUBindGroup bind_group;
+WGPUBuffer *staging_buffer, *output_buffer_storage, *input_buffer;
+nano_shader_t *shader;
+WGPUComputePipeline compute_pipeline;
+WGPUBindGroup bind_group;
 
-// // Callback to handle the mapped data
-// void mapReadCallback(WGPUBufferMapAsyncStatus status, void *userdata) {
-//     if (status == WGPUBufferMapAsyncStatus_Success) {
-//         const Data *output = (const Data *)wgpuBufferGetConstMappedRange(
-//             staging_buffer, 0, buffer_size);
-//         // Process the data
-//         for (int i = 0; i < 4; ++i) {
-//             printf("Output data[%d] = %f\n", i, output[i].value);
-//         }
-//         wgpuBufferUnmap(staging_buffer);
-//     } else {
-//         printf("Failed to map buffer for reading.\n");
-//     }
-// }
+// Callback to handle the mapped data
+void mapReadCallback(WGPUBufferMapAsyncStatus status, void *userdata) {
+    if (status == WGPUBufferMapAsyncStatus_Success) {
+        const Data *output = (const Data *)wgpuBufferGetConstMappedRange(
+            *staging_buffer, 0, buffer_size);
+        // Process the data
+        for (int i = 0; i < 4; ++i) {
+            printf("Output data[%d] = %f\n", i, output[i].value);
+        }
+        wgpuBufferUnmap(*staging_buffer);
+    } else {
+        printf("Failed to map buffer for reading.\n");
+    }
+}
 
-// // Execute compute shader
-// static void nano_compute_pass(void) {
-//     // Get the queue to submit the command buffer
-//     WGPUQueue queue = wgpuDeviceGetQueue(nano_app.wgpu->device);
-//     uint32_t invocation_size = buffer_size / sizeof(Data);
-//
-//     WGPUCommandEncoder command_encoder =
-//         wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, NULL);
-//
-//     // Begin a compute pass to execute compute shader commands
-//     WGPUComputePassEncoder compute_pass =
-//         wgpuCommandEncoderBeginComputePass(command_encoder, NULL);
-//     wgpuComputePassEncoderSetPipeline(compute_pass, shader->pipeline.compute);
-//     wgpuComputePassEncoderSetBindGroup(compute_pass, 0, bind_group, 0, NULL);
-//     // Dispatch the compute shader with the number of workgroups
-//     uint32_t x = (uint32_t)compute_info.workgroup_size[0];
-//     uint32_t y = (uint32_t)compute_info.workgroup_size[1];
-//     uint32_t z = (uint32_t)compute_info.workgroup_size[2];
-//     wgpuComputePassEncoderDispatchWorkgroups(compute_pass, x, y, z);
-//     wgpuComputePassEncoderEnd(compute_pass);
-//
-//     WGPUCommandBuffer command_buffer =
-//         wgpuCommandEncoderFinish(command_encoder, NULL);
-//     wgpuQueueSubmit(queue, 1, &command_buffer);
-//
-//     // Create a new command encoder for the copy operation
-//     WGPUCommandEncoder copy_encoder =
-//         wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, NULL);
-//     wgpuCommandEncoderCopyBufferToBuffer(copy_encoder,
-//                                          output_buffer_storage->buffer, 0,
-//                                          staging_buffer, 0, buffer_size);
-//     WGPUCommandBuffer copy_command_buffer =
-//         wgpuCommandEncoderFinish(copy_encoder, NULL);
-//     wgpuQueueSubmit(queue, 1, &copy_command_buffer);
-//
-//     // Map the staging buffer for reading asynchronously
-//     wgpuBufferMapAsync(staging_buffer, WGPUMapMode_Read, 0, buffer_size,
-//                        mapReadCallback, NULL);
-// }
+// Execute compute shader
+static void nano_compute_pass(void) {
+    // Get the queue to submit the command buffer
+    WGPUQueue queue = wgpuDeviceGetQueue(nano_app.wgpu->device);
+    uint32_t invocation_size = buffer_size / sizeof(Data);
+
+    WGPUCommandEncoder command_encoder =
+        wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, NULL);
+
+    // Begin a compute pass to execute compute shader commands
+    WGPUComputePassEncoder compute_pass =
+        wgpuCommandEncoderBeginComputePass(command_encoder, NULL);
+    wgpuComputePassEncoderSetPipeline(compute_pass, compute_pipeline);
+    wgpuComputePassEncoderSetBindGroup(compute_pass, 0, bind_group, 0, NULL);
+
+    // Dispatch the compute shader with the number of workgroups
+    uint32_t x = (uint32_t)shader->entry_points[0].workgroup_size.x;
+    uint32_t y = (uint32_t)shader->entry_points[0].workgroup_size.y;
+    uint32_t z = (uint32_t)shader->entry_points[0].workgroup_size.z;
+    wgpuComputePassEncoderDispatchWorkgroups(compute_pass, x, y, z);
+    wgpuComputePassEncoderEnd(compute_pass);
+
+    WGPUCommandBuffer command_buffer =
+        wgpuCommandEncoderFinish(command_encoder, NULL);
+    wgpuQueueSubmit(queue, 1, &command_buffer);
+
+    // Create a new command encoder for the copy operation
+    WGPUCommandEncoder copy_encoder =
+        wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, NULL);
+    wgpuCommandEncoderCopyBufferToBuffer(copy_encoder, *output_buffer_storage,
+                                         0, *staging_buffer, 0, buffer_size);
+    WGPUCommandBuffer copy_command_buffer =
+        wgpuCommandEncoderFinish(copy_encoder, NULL);
+    wgpuQueueSubmit(queue, 1, &copy_command_buffer);
+
+    // Map the staging buffer for reading asynchronously
+    wgpuBufferMapAsync(*staging_buffer, WGPUMapMode_Read, 0, buffer_size,
+                       mapReadCallback, NULL);
+}
 
 static void init(void) {
 
@@ -88,7 +87,7 @@ static void init(void) {
 
     // Initialize the buffer pool for the compute backend
     nano_init_shader_pool(&nano_app.shader_pool);
-    
+
     // ------------------------------------------------------
     /* START OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
 
@@ -101,8 +100,7 @@ static void init(void) {
     // COMPUTE SHADER CREATION
     char shader_path[256];
     char shader_name[] = "compute-wgpu.wgsl";
-    snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
-             shader_name);
+    snprintf(shader_path, sizeof(shader_path), SHADER_PATH, shader_name);
 
     printf("Shader Path: %s\n", shader_path);
 
@@ -117,20 +115,17 @@ static void init(void) {
         printf("Failed to create shader\n");
         return;
     }
-    
+
     // Get the shader from the shader pool
-    nano_shader_t *shader = nano_get_shader(&nano_app.shader_pool, shader_id);
+    shader = nano_get_shader(&nano_app.shader_pool, shader_id);
 
     printf("Shader ID: %d\n", shader->id);
 
     // Get the input buffer from the shader
-    WGPUBuffer input_buffer = nano_get_buffer(shader, 0, 0);
+    input_buffer = nano_get_buffer(shader, 0, 0);
 
     // Get the output buffer from the shader
-    WGPUBuffer output_buffer_storage = nano_get_buffer(shader, 0, 1);
-
-    printf("Input Buffer: %d\n", input_buffer);
-    printf("Output Buffer: %d\n", output_buffer_storage);
+    output_buffer_storage = nano_get_buffer(shader, 0, 1);
 
     // Buffer descriptor for the staging buffer until I come up with a solution
     // for staging buffers
@@ -140,62 +135,59 @@ static void init(void) {
         // from the buffer back to the CPU from the GPU.
         .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead,
     };
-    
+
     // Create the staging buffer to read results back to the CPU
-    staging_buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &staging_desc);
-    //
-    // // Get the input buffer from the buffer pool
-    // input_buffer = nano_get_buffer(&nano_app.buffer_pool, shader->id, 0, 0);
-    //
-    // // Get the output buffer from the buffer pool
-    // output_buffer_storage =
-    //     nano_get_buffer(&nano_app.buffer_pool, shader->id, 0, 1);
-    //
-    // // BINDGROUP CREATION FOR BUFFERS
-    //
-    // // Create the bind group entry for all 3 buffers
-    // // This can probably easily be code gen'd in the future
-    // WGPUBindGroupEntry bg_entries[2] = {
-    //     {
-    //         .binding = 0,
-    //         // implement getting buffer from buffer pool based on binding,
-    //         // group, and shader id
-    //         .buffer = input_buffer->buffer,
-    //         .offset = 0,
-    //         .size = buffer_size,
-    //     },
-    //     {
-    //         .binding = 1,
-    //         .buffer = output_buffer_storage->buffer,
-    //         .offset = 0,
-    //         .size = buffer_size,
-    //     },
-    // };
-    //
-    // // Create the bind group descriptor
-    // WGPUBindGroupDescriptor bg_desc = {
-    //     // I am using using 0 here because the test shader only uses group 0
-    //     .layout = shader->pipeline_layout.bg_layouts[0],
-    //     .entryCount = 2,
-    //     .entries = bg_entries,
-    // };
-    //
-    // // Finally create the bind group
-    // bind_group = wgpuDeviceCreateBindGroup(nano_app.wgpu->device, &bg_desc);
-    //
-    // // Once we have the bind group and a compute pipeline, we can write the
-    // // data to the input buffers to be used in the compute shader pass
-    // wgpuQueueWriteBuffer(queue, input_buffer->buffer, 0, input_data,
-    //                      sizeof(input_data));
-    //
-    // // ------------------------------------------------------
-    // /* END OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
-    //
-    // nano_compute_pass();
+    WGPUBuffer tmp =
+        wgpuDeviceCreateBuffer(nano_app.wgpu->device, &staging_desc);
+
+    staging_buffer = &tmp;
+
+    compute_pipeline = nano_get_compute_pipeline(shader);
+
+    // BINDGROUP CREATION FOR BUFFERS
+
+    // Create the bind group entry for all 3 buffers
+    // This can probably easily be code gen'd in the future
+    WGPUBindGroupEntry bg_entries[2] = {
+        {
+            .binding = 0,
+            // implement getting buffer from buffer pool based on binding,
+            // group, and shader id
+            .buffer = *input_buffer,
+            .offset = 0,
+            .size = buffer_size,
+        },
+        {
+            .binding = 1,
+            .buffer = *output_buffer_storage,
+            .offset = 0,
+            .size = buffer_size,
+        },
+    };
+
+    // Create the bind group descriptor
+    WGPUBindGroupDescriptor bg_desc = {
+        // I am using using 0 here because the test shader only uses group 0
+        .layout = shader->layout.bg_layouts[0],
+        .entryCount = 2,
+        .entries = bg_entries,
+    };
+
+    // Finally create the bind group
+    bind_group = wgpuDeviceCreateBindGroup(nano_app.wgpu->device, &bg_desc);
+
+    // Once we have the bind group and a compute pipeline, we can write the
+    // data to the input buffers to be used in the compute shader pass
+    wgpuQueueWriteBuffer(queue, *input_buffer, 0, input_data,
+                         sizeof(input_data));
+
+    // ------------------------------------------------------
+    /* END OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
+
+    nano_compute_pass();
 }
 
-
-static void frame(void) {  
+static void frame(void) {
     // Update necessary Nano app state at beginning of frame
     // Get the current command encoder (this is nano_app.wgpu->cmd_encoder)
     // A new command encoder is created with each frame

@@ -57,6 +57,7 @@
 //  NANO
 // -------------------------------------------------
 
+#include "webgpu.h"
 #define CIMGUI_WGPU
 #include "wgpu_entry.h"
 #include <stdint.h>
@@ -300,20 +301,21 @@ int nano_create_buffer(nano_binding_info_t *binding, size_t size) {
 }
 
 // Get a buffer from the shader info struct using the group and binding
-WGPUBuffer nano_get_buffer(nano_shader_t *info, int group, int binding) {
+WGPUBuffer* nano_get_buffer(nano_shader_t *info, int group, int binding) {
     if (info == NULL) {
         fprintf(stderr, "NANO: nano_get_buffer() -> Shader info is NULL\n");
         return NULL;
     }
-
+    
+    // Retrieve binding index from the group_indices array
     int index = info->group_indices[group][binding];
     if (index == -1) {
         fprintf(stderr, "NANO: nano_get_buffer() -> Binding not found\n");
         return NULL;
     }
 
-    nano_binding_info_t binding_info = info->bindings[index];
-    return binding_info.buffer;
+    // Return the buffer from the binding info struct as a pointer
+    return &info->bindings[index].buffer;
 }
 
 // Shader Pool Functions
@@ -1033,6 +1035,36 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     _nano_update_shader_labels();
 
     return shader_id;
+}
+
+// Get the compute pipeline from the shader info struct if it exists
+WGPUComputePipeline nano_get_compute_pipeline(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_get_compute_pipeline() -> Shader is NULL\n");
+        return NULL;
+    }
+
+    if (shader->compute_pipeline == NULL) {
+        fprintf(stderr, "NANO: nano_get_compute_pipeline() -> Compute pipeline not found\n");
+        return NULL;
+    }
+
+    return shader->compute_pipeline;
+}
+
+// Get the render pipeline from the shader info struct if it exists
+WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_get_render_pipeline() -> Shader is NULL\n");
+        return NULL;
+    }
+
+    if (shader->render_pipeline == NULL) {
+        fprintf(stderr, "NANO: nano_get_render_pipeline() -> Render pipeline not found\n");
+        return NULL;
+    }
+
+    return shader->render_pipeline;
 }
 
 // Core Application Functions (init, event, cleanup)

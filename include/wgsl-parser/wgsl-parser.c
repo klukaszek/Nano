@@ -35,8 +35,8 @@ void parse_identifier(Parser *parser, char *ident, bool is_type) {
                 break;
         }
     } else {
-        while (isalnum(peek(parser)) || peek(parser) == '_' || peek(parser) == '<' ||
-               peek(parser) == '>') {
+        while (isalnum(peek(parser)) || peek(parser) == '_' ||
+               peek(parser) == '<' || peek(parser) == '>') {
             ident[i++] = next(parser);
             if (i >= MAX_IDENT_LENGTH - 1)
                 break;
@@ -144,7 +144,8 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
 
     char attr[MAX_IDENT_LENGTH];
     parse_identifier(parser, attr, false);
-
+    
+    // Check if the attribute is an entry point
     int index = info->entry_point_count;
     EntryPoint *ep = &info->entry_points[info->entry_point_count++];
     if (strcmp(attr, "compute") == 0) {
@@ -157,7 +158,8 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
         info->entry_point_count--;
         return;
     }
-
+    
+    // Parse workgroup size
     skip_whitespace(parser);
     if (strncmp(&parser->input[parser->position], "@workgroup_size", 15) == 0) {
         parser->position += 15;
@@ -174,6 +176,15 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
         skip_whitespace(parser);
     }
 
+    // Ensure workgroup size is at least 1
+    if (ep->workgroup_size.x == 0)
+        ep->workgroup_size.x = 1;
+    if (ep->workgroup_size.y == 0)
+        ep->workgroup_size.y = 1;
+    if (ep->workgroup_size.z == 0)
+        ep->workgroup_size.z = 1;
+    
+    // Parse entry point name
     if (strncmp(&parser->input[parser->position], "fn", 2) == 0) {
         parser->position += 2;
         skip_whitespace(parser);
@@ -181,6 +192,7 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
     }
 }
 
+// Top level function to parse the shader source into a ShaderInfo struct
 void parse_shader(Parser *parser, ShaderInfo *info) {
     while (!is_eof(parser)) {
         skip_whitespace(parser);

@@ -74,7 +74,7 @@ typedef struct {
     WGPUBufferUsageFlags usage_flags;
     int group;
     int binding;
-    uint32_t shader_id;
+    uint32_t shader_id;// Iterate over bindings and print the buffer number for each binding
     char type[32];
     char name[MAX_IDENT_LENGTH];
 } BindingInfo;

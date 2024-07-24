@@ -485,7 +485,8 @@ static EM_BOOL emsc_size_changed(int event_type,
     // wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
 #ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ScaleUIToCanvas(state.desc.res_x, state.desc.res_y, state.width, state.height);
+    ImGui_ImplWGPU_ScaleUIToCanvas(state.desc.res_x, state.desc.res_y,
+                                   state.width, state.height);
 #endif
     return true;
 }
@@ -806,8 +807,8 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     // Once the swapchain is created, we can initialize ImGui
     // This is only done if the CIMGUI_WGPU macro is defined
     ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
-                        WGPUTextureFormat_Undefined, state->desc.res_x, state->desc.res_y, state->width,
-                        state->height);
+                        WGPUTextureFormat_Undefined, state->desc.res_x,
+                        state->desc.res_y, state->width, state->height);
 #endif
     state->desc.init_cb();
     wgpuDevicePopErrorScope(state->device, error_cb, 0);
@@ -852,6 +853,9 @@ static EM_BOOL emsc_frame(double time, void *userdata) {
 /// Start platform specific code
 void wgpu_platform_start(wgpu_state_t *state) {
     assert(state->instance == 0);
+
+    // Set the exit callback for the application
+    atexit(state->desc.shutdown_cb);
 
     // Set canvas size callbacks for emscripten
     emsc_update_canvas_size();
