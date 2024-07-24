@@ -52,8 +52,6 @@ WGPUBufferUsageFlags parse_storage_class_and_access(Parser *parser) {
 
     parse_identifier(parser, identifier, false);
 
-    printf("Identifier: %s\n", identifier);
-
     if (strcmp(identifier, "uniform") == 0) {
         flags |= WGPUBufferUsage_Uniform;
     } else if (strcmp(identifier, "storage") == 0) {

@@ -222,7 +222,7 @@ typedef struct ImGui_ImplWGPU_Data {
 // ----------------------------------------------------------------------------
 
 // Forward declarations
-static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
+static inline ImGui_ImplWGPU_Data* ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
                                        WGPUTextureFormat depth_stencil_format,
@@ -279,7 +279,7 @@ static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device,
 }
 
 // Initialize the WGPU backend for ImGui
-static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
+static inline ImGui_ImplWGPU_Data* ImGui_ImplWGPU_Init(WGPUDevice device,
                                        int num_frames_in_flight,
                                        WGPUTextureFormat render_target_format,
                                        WGPUTextureFormat depth_stencil_format,
@@ -339,7 +339,7 @@ static inline bool ImGui_ImplWGPU_Init(WGPUDevice device,
     // Set up ImGui style scaling
     ImGui_ImplWGPU_ScaleUIToCanvas(res_x, res_y, width, height);
 
-    return true;
+    return bd;
 }
 
 // Shutdown the WGPU backend
@@ -384,10 +384,7 @@ inline void ImGui_ImplWGPU_NewFrame(void) {
     bd->deltaTime = current_time;
 
     // Create device objects if not already created
-    /* if (bd->PipelineState == NULL) */
     ImGui_ImplWGPU_CreateDeviceObjects();
-
-    /* ImGui_ImplWGPU_CreateFontsTexture(); */
 }
 
 // Create WGPU device objects (pipeline, buffers, textures, etc.)

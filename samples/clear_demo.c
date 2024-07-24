@@ -1,9 +1,6 @@
 #define WGPU_BACKEND_DEBUG
 #define NANO_DEBUG
 #include "nano.h"
-#include <dirent.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 typedef struct {
     float value;
@@ -23,7 +20,7 @@ void mapReadCallback(WGPUBufferMapAsyncStatus status, void *userdata) {
         const Data *output = (const Data *)wgpuBufferGetConstMappedRange(
             *staging_buffer, 0, buffer_size);
         // Process the data
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 64; ++i) {
             printf("Output data[%d] = %f\n", i, output[i].value);
         }
         wgpuBufferUnmap(*staging_buffer);
@@ -77,8 +74,6 @@ static void init(void) {
     // Initialize the nano project
     nano_default_init();
 
-    printf("Nano WGPU Initialized\n");
-
     // Initialize the input data
     Data input_data[64];
     for (int i = 0; i < 64; ++i) {
@@ -102,8 +97,6 @@ static void init(void) {
     char shader_name[] = "compute-wgpu.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH, shader_name);
 
-    printf("Shader Path: %s\n", shader_path);
-
     // Generate the shader from the shader path
     // Todo: Test shader pool with multiple shaders
     // Todo: Implement shader hot-reloading via drag drop into cimgui window
@@ -118,8 +111,6 @@ static void init(void) {
 
     // Get the shader from the shader pool
     shader = nano_get_shader(&nano_app.shader_pool, shader_id);
-
-    printf("Shader ID: %d\n", shader->id);
 
     // Get the input buffer from the shader
     input_buffer = nano_get_buffer(shader, 0, 0);

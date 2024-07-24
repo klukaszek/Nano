@@ -44,8 +44,6 @@
 // }
 // ------------------------------------------------------------------
 
-// TODO: Handle binding/buffer initialization.
-// TODO: Test compute pipeline creation in the shader pool
 // TODO: Test render pipeline creation in the shader pool
 // TODO: Move default shader for debug UI into the shader pool
 // TODO: Add a button to reload the shader in the shader pool once it has
@@ -185,7 +183,6 @@ static nano_font_info_t nano_fonts = {
 // Nano State Declarations & Static Definition
 // -------------------------------------------
 
-typedef WGPURenderPassDescriptor nano_pass_action_t;
 typedef wgpu_state_t nano_wgpu_state_t;
 
 // This is the struct that will hold all of the running application data
@@ -196,7 +193,6 @@ typedef struct nano_t {
     float frametime;
     float fps;
     nano_font_info_t font_info;
-    nano_pass_action_t pass_action;
     nano_shader_pool_t shader_pool;
 } nano_t;
 
@@ -207,7 +203,6 @@ static nano_t nano_app = {
     .frametime = 0.0f,
     .fps = 0.0f,
     .font_info = {0},
-    .pass_action = {0},
     .shader_pool = {0},
 };
 
@@ -1031,6 +1026,8 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     // Increment the shader count
     nano_app.shader_pool.shader_count++;
 
+    LOG("NANO: Created shader %d\n", shader_id);
+
     // Update the shader labels for the ImGui combo boxes
     _nano_update_shader_labels();
 
@@ -1073,7 +1070,7 @@ WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
 // Function called by sokol_app to initialize the application with
 // WebGPU sokol_gfx sglue & cimgui
 static void nano_default_init(void) {
-    LOG("Initializing NANO WGPU app...\n");
+    LOG("NANO: Initializing NANO WGPU app...\n");
 
     // Retrieve the WGPU state from the wgpu_entry.h file
     // This state is created and ready to use when running an

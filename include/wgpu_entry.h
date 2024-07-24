@@ -202,6 +202,9 @@ typedef struct {
     bool async_setup_done;
     bool async_setup_failed;
     double last_frame_time;
+    #ifdef CIMGUI_WGPU
+        ImGui_ImplWGPU_Data *imgui_data;
+    #endif
 } wgpu_state_t;
 
 static wgpu_state_t state;
@@ -806,9 +809,14 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
 #ifdef CIMGUI_WGPU
     // Once the swapchain is created, we can initialize ImGui
     // This is only done if the CIMGUI_WGPU macro is defined
-    ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
+    state->imgui_data = ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
                         WGPUTextureFormat_Undefined, state->desc.res_x,
                         state->desc.res_y, state->width, state->height);
+    if (!state->imgui_data) {
+        LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
+        state->async_setup_failed = true;
+        return;
+    }
 #endif
     state->desc.init_cb();
     wgpuDevicePopErrorScope(state->device, error_cb, 0);
