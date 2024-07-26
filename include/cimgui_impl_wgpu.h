@@ -6,6 +6,7 @@
 #include "cimgui.h"
 #include <assert.h>
 #include <emscripten.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <webgpu/webgpu.h>
@@ -15,7 +16,7 @@
 #define IM_ALLOC(size) malloc(size)
 #define IM_FREE(ptr) free(ptr)
 
-#ifdef CIMGUI_LOG
+#ifdef NANO_CIMGUI_DEBUG
     #define ILOG(...) printf(__VA_ARGS__);
 #else
     #define ILOG(...)
@@ -865,10 +866,6 @@ static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y, floa
     // This should be changed to the target resolution if we can get it
     float scale = (scale_x < scale_y) ? scale_x : scale_y;
     scale = (scale < 1.0f) ? 1.0f : scale;
-
-    // Set display size
-    ImGuiIO *io = igGetIO();
-    io->FontGlobalScale = scale;
 
     // Destroy and recreate the style to preserve the scale
     ImGuiStyle_destroy(igGetStyle());

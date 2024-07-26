@@ -21,6 +21,29 @@ typedef enum ShaderType {
     FRAGMENT,
 } ShaderType;
 
+typedef enum BindingType {
+    BUFFER,
+    TEXTURE,
+    STORAGE_TEXTURE,
+} BindingType;
+
+// typedefs for the necessary binding information
+// this is used to create a union for the different binding types
+typedef WGPUBufferUsageFlags BufferInfo;
+typedef WGPUSamplerBindingType SamplerInfo;
+typedef struct TextureInfo {
+    WGPUTextureSampleType sample_type;
+    WGPUTextureViewDimension view_dimension;
+    WGPUTextureUsageFlags usage;
+} TextureInfo;
+
+typedef struct StorageTextureInfo {
+    WGPUStorageTextureAccess access;
+    WGPUTextureFormat format;
+    WGPUTextureViewDimension view_dimension;
+    WGPUTextureUsageFlags usage;
+} StorageTextureInfo;
+
 // -----------------------------------------------
 
 // Type Information
@@ -70,12 +93,28 @@ typedef struct {
 typedef struct {
     bool in_use;
     size_t size;
-    WGPUBuffer buffer;
-    WGPUBufferUsageFlags usage_flags;
+    
+    BindingType binding_type;
+    
+    // Store the reference to whatever the binding is
+    union {
+        WGPUBuffer buffer;
+        WGPUTexture texture;
+        WGPUTextureView texture_view;
+    } data;
+    
+    // Store the information about the binding
+    union {
+        BufferInfo buffer_usage;
+        TextureInfo texture_info;
+    } info;
+
     int group;
     int binding;
+
     uint32_t shader_id;// Iterate over bindings and print the buffer number for each binding
-    char type[32];
+    
+    char data_type[32];
     char name[MAX_IDENT_LENGTH];
 } BindingInfo;
 
@@ -153,7 +192,17 @@ int parse_number(Parser *parser);
 
 void parse_identifier(Parser *parser, char *ident, bool is_type);
 
-WGPUBufferUsageFlags parse_storage_class_and_access(Parser *parser);
+WGPUFlags parse_storage_class_and_access(Parser *parser);
+
+WGSLType parse_type(Parser *parser);
+
+BindingType parse_binding_type(Parser *parser);
+
+void parse_sampler(Parser *parser, BindingInfo *bi);
+
+void parse_texture(Parser *parser, BindingInfo *bi);
+
+void parse_storage_texture(Parser *parser, BindingInfo *bi);
 
 void parse_binding(Parser *parser, ShaderInfo *info);
 

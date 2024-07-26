@@ -46,8 +46,8 @@ void parse_identifier(Parser *parser, char *ident, bool is_type) {
     ident[i] = '\0';
 }
 
-WGPUBufferUsageFlags parse_storage_class_and_access(Parser *parser) {
-    WGPUBufferUsageFlags flags = WGPUBufferUsage_None;
+WGPUFlags parse_storage_class_and_access(Parser *parser) {
+    WGPUFlags flags = WGPUBufferUsage_None;
     char identifier[MAX_IDENT_LENGTH];
 
     parse_identifier(parser, identifier, false);
@@ -74,6 +74,32 @@ WGPUBufferUsageFlags parse_storage_class_and_access(Parser *parser) {
     }
 
     return flags;
+}
+
+// WGSLType parse_type(Parser *parser) {
+//     WGSLType type = TYPE_F32;
+//     char identifier[MAX_IDENT_LENGTH];
+//     parse_identifier(parser, identifier, true);
+//
+//     if (strcmp())
+//
+//     return type;
+// }
+
+// Determine the type of the binding
+BindingType parse_binding_type(Parser *parser) {
+    BindingType type = BUFFER;
+    char identifier[MAX_IDENT_LENGTH];
+    skip_whitespace(parser);
+    parse_identifier(parser, identifier, false);
+
+    if (strcmp(identifier, "texture") == 0) {
+        type = TEXTURE;
+    } else if (strcmp(identifier, "storage_texture") == 0) {
+        type = STORAGE_TEXTURE;
+    }
+
+    return type;
 }
 
 // Parse the binding information from the shader source
@@ -110,7 +136,7 @@ void parse_binding(Parser *parser, ShaderInfo *info) {
     skip_whitespace(parser);
     next(parser); // Skip '<'
 
-    WGPUBufferUsageFlags usage_flags = parse_storage_class_and_access(parser);
+    WGPUBufferUsageFlags buffer_usage = parse_storage_class_and_access(parser);
 
     next(parser); // Skip '>'
 
@@ -121,16 +147,31 @@ void parse_binding(Parser *parser, ShaderInfo *info) {
     skip_whitespace(parser);
     next(parser); // Skip ':'
 
-    skip_whitespace(parser);
-    char type[MAX_IDENT_LENGTH];
-    parse_identifier(parser, type, true);
-
+    // Create a new binding info struct and set the default fields
     BindingInfo *bi = &info->bindings[info->binding_count++];
     bi->group = group;
     bi->binding = binding;
     bi->shader_id = info->id;
-    bi->usage_flags = usage_flags;
-    strcpy(bi->type, type);
+
+    // Get binding type so we can parse the correct information
+    BindingType binding_type = parse_binding_type(parser);
+
+    // Parse the rest of the binding information based on the type
+    switch (binding_type) {
+        case TEXTURE:
+            // parse_texture(parser, bi);
+            break;
+        case STORAGE_TEXTURE:
+            // parse_storage_texture(parser, bi);
+            break;
+        case BUFFER:
+            bi->binding_type = BUFFER;
+            bi->info.buffer_usage = buffer_usage;
+            parse_identifier(parser, bi->data_type, true);
+            break;
+    }
+
+    // Save the name of the binding
     strcpy(bi->name, name);
 }
 
@@ -142,7 +183,7 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
 
     char attr[MAX_IDENT_LENGTH];
     parse_identifier(parser, attr, false);
-    
+
     // Check if the attribute is an entry point
     int index = info->entry_point_count;
     EntryPoint *ep = &info->entry_points[info->entry_point_count++];
@@ -156,7 +197,7 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
         info->entry_point_count--;
         return;
     }
-    
+
     // Parse workgroup size
     skip_whitespace(parser);
     if (strncmp(&parser->input[parser->position], "@workgroup_size", 15) == 0) {
@@ -181,7 +222,7 @@ void parse_entry_point(Parser *parser, ShaderInfo *info) {
         ep->workgroup_size.y = 1;
     if (ep->workgroup_size.z == 0)
         ep->workgroup_size.z = 1;
-    
+
     // Parse entry point name
     if (strncmp(&parser->input[parser->position], "fn", 2) == 0) {
         parser->position += 2;
@@ -222,106 +263,131 @@ void print_shader_info(ShaderInfo *info) {
         BindingInfo *bi = &info->bindings[i];
         printf("  @group(%d) @binding(%d) var<", bi->group, bi->binding);
 
-        if (bi->usage_flags & WGPUBufferUsage_Uniform) {
-            printf("uniform");
-        } else if (bi->usage_flags & WGPUBufferUsage_Storage) {
-            printf("storage");
-        }
-
-        if (bi->usage_flags & WGPUBufferUsage_CopySrc) {
-            if (bi->usage_flags & WGPUBufferUsage_CopyDst) {
-                printf(", read_write");
-            } else {
-                printf(", read");
-            }
-        } else if (bi->usage_flags & WGPUBufferUsage_CopyDst) {
-            printf(", write");
-        }
-
-        printf("> %s: %s\n", bi->name, bi->type);
-
-        printf("    Buffer Usage Flags: ");
-        if (bi->usage_flags & WGPUBufferUsage_MapRead)
-            printf("MapRead ");
-        if (bi->usage_flags & WGPUBufferUsage_MapWrite)
-            printf("MapWrite ");
-        if (bi->usage_flags & WGPUBufferUsage_CopySrc)
-            printf("CopySrc ");
-        if (bi->usage_flags & WGPUBufferUsage_CopyDst)
-            printf("CopyDst ");
-        if (bi->usage_flags & WGPUBufferUsage_Index)
-            printf("Index ");
-        if (bi->usage_flags & WGPUBufferUsage_Vertex)
-            printf("Vertex ");
-        if (bi->usage_flags & WGPUBufferUsage_Uniform)
-            printf("Uniform ");
-        if (bi->usage_flags & WGPUBufferUsage_Storage)
-            printf("Storage ");
-        if (bi->usage_flags & WGPUBufferUsage_Indirect)
-            printf("Indirect ");
-        if (bi->usage_flags & WGPUBufferUsage_QueryResolve)
-            printf("QueryResolve ");
-        printf("\n");
-    }
-
-    printf("\nEntry Points:\n");
-    for (int i = 0; i < info->entry_point_count; i++) {
-        EntryPoint *ep = &info->entry_points[i];
-        printf("  ");
-        switch (ep->type) {
-            case COMPUTE:
-                printf("@compute");
-                if (ep->workgroup_size.x > 0) {
-                    printf(" @workgroup_size(%d", ep->workgroup_size.x);
-                    if (ep->workgroup_size.y > 0) {
-                        printf(", %d", ep->workgroup_size.y);
-                        if (ep->workgroup_size.z > 0) {
-                            printf(", %d", ep->workgroup_size.z);
-                        }
-                    }
-                    printf(")");
+        switch (bi->binding_type) {
+            case BUFFER:
+                printf("<");
+                if (bi->info.buffer_usage & WGPUBufferUsage_Uniform) {
+                    printf("uniform");
+                } else if (bi->info.buffer_usage & WGPUBufferUsage_Storage) {
+                    printf("storage");
                 }
+                if (bi->info.buffer_usage & WGPUBufferUsage_CopySrc) {
+                    if (bi->info.buffer_usage & WGPUBufferUsage_CopyDst) {
+                        printf(", read_write");
+                    } else {
+                        printf(", read");
+                    }
+                } else if (bi->info.buffer_usage & WGPUBufferUsage_CopyDst) {
+                    printf(", write");
+                }
+                printf("> ");
                 break;
-            case VERTEX:
-                printf("@vertex");
+            case TEXTURE:
                 break;
-            case FRAGMENT:
-                printf("@fragment");
+            case STORAGE_TEXTURE:
+                printf("<storage, ");
+                // implement a function to convert WGPUTextureFormat to string
+                // printf("%s> ", wgpu_texture_format_to_string(
+                //                    bi->info.storage_texture_format));
                 break;
         }
-        printf(" fn %s()\n", ep->entry);
+
+        printf("%s: %s\n", bi->name, bi->data_type);
+
+        if (bi->binding_type == BUFFER) {
+
+            WGPUBufferUsageFlags info = bi->info.buffer_usage;
+
+            printf("    Buffer Usage Flags: ");
+            if (info & WGPUBufferUsage_MapRead)
+                printf("MapRead ");
+            if (info & WGPUBufferUsage_MapWrite)
+                printf("MapWrite ");
+            if (info & WGPUBufferUsage_CopySrc)
+                printf("CopySrc ");
+            if (info & WGPUBufferUsage_CopyDst)
+                printf("CopyDst ");
+            if (info & WGPUBufferUsage_Index)
+                printf("Index ");
+            if (info & WGPUBufferUsage_Vertex)
+                printf("Vertex ");
+            if (info & WGPUBufferUsage_Uniform)
+                printf("Uniform ");
+            if (info & WGPUBufferUsage_Storage)
+                printf("Storage ");
+            if (info & WGPUBufferUsage_Indirect)
+                printf("Indirect ");
+            if (info & WGPUBufferUsage_QueryResolve)
+                printf("QueryResolve ");
+
+            printf("\n");
+
+        } else if (bi->binding_type == TEXTURE ||
+                   bi->binding_type == STORAGE_TEXTURE) {
+            printf("Texture\n");
+        }
+
+        printf("\nEntry Points:\n");
+        for (int i = 0; i < info->entry_point_count; i++) {
+            EntryPoint *ep = &info->entry_points[i];
+            printf("  ");
+            switch (ep->type) {
+                case COMPUTE:
+                    printf("@compute");
+                    if (ep->workgroup_size.x > 0) {
+                        printf(" @workgroup_size(%d", ep->workgroup_size.x);
+                        if (ep->workgroup_size.y > 0) {
+                            printf(", %d", ep->workgroup_size.y);
+                            if (ep->workgroup_size.z > 0) {
+                                printf(", %d", ep->workgroup_size.z);
+                            }
+                        }
+                        printf(")");
+                    }
+                    break;
+                case VERTEX:
+                    printf("@vertex");
+                    break;
+                case FRAGMENT:
+                    printf("@fragment");
+                    break;
+                case NONE:
+                    break;
+            }
+            printf(" fn %s()\n", ep->entry);
+        }
     }
 }
 
-// File IO
-// -----------------------------------------------
-// Function to read a shader into a string
-char *read_file(const char *filename) {
-    FILE *file = fopen(filename, "rb");
-    if (!file) {
-        fprintf(stderr, "Could not open file %s\n", filename);
-        return NULL;
-    }
+    // File IO
+    // -----------------------------------------------
+    // Function to read a shader into a string
+    char *read_file(const char *filename) {
+        FILE *file = fopen(filename, "rb");
+        if (!file) {
+            fprintf(stderr, "Could not open file %s\n", filename);
+            return NULL;
+        }
 
-    // Get the length of the file so we can allocate the correct amount of
-    // memory for the shader string buffer
-    fseek(file, 0, SEEK_END);
-    size_t length = (size_t)ftell(file);
-    fseek(file, 0, SEEK_SET);
+        // Get the length of the file so we can allocate the correct amount of
+        // memory for the shader string buffer
+        fseek(file, 0, SEEK_END);
+        size_t length = (size_t)ftell(file);
+        fseek(file, 0, SEEK_SET);
 
-    // It is important to free the buffer after using it, it might be a good
-    // idea to implement an arena structure into the Nano STL for better
-    // handling of dynamic memory allocations.
-    char *buffer = (char *)malloc(length + 1);
-    if (!buffer) {
-        fprintf(stderr, "Memory allocation failed\n");
+        // It is important to free the buffer after using it, it might be a good
+        // idea to implement an arena structure into the Nano STL for better
+        // handling of dynamic memory allocations.
+        char *buffer = (char *)malloc(length + 1);
+        if (!buffer) {
+            fprintf(stderr, "Memory allocation failed\n");
+            fclose(file);
+            return NULL;
+        }
+
+        fread(buffer, 1, length, file);
+        buffer[length] = '\0';
         fclose(file);
-        return NULL;
+
+        return buffer;
     }
-
-    fread(buffer, 1, length, file);
-    buffer[length] = '\0';
-    fclose(file);
-
-    return buffer;
-}

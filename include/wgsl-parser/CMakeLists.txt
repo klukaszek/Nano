@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(wgsl-parser)
 
-set(CMAKE_C_COMPILER "clang")
-
 # Create the wgsl_parser library
-add_library(wgsl-parser
+add_library(wgsl-parser STATIC
     wgsl-parser.c
     wgsl-parser.h
     webgpu.h
@@ -19,5 +17,3 @@ add_executable(test
 
 # # Link the wgsl_parser library to the test executable
 target_link_libraries(test PRIVATE wgsl-parser)
-
-set(CMAKE_C_COMPILER "emcc")

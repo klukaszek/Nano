@@ -114,12 +114,101 @@ typedef struct ShaderNode {
     bool occupied;
 } ShaderNode;
 
+// Generic Array/Stack Implementation Based on old GGYL code
+// ----------------------------------------
+
+// Call this macro to define an array/s structure and its functions
+// The macro will define the following functions:
+// - NAME##_init(NAME *s)
+// - NAME##_is_empty(NAME *s)
+// - NAME##_is_full(NAME *s)
+// - NAME##_push(NAME *s, T value)
+// - NAME##_pop(NAME *s)
+// - NAME##_peek(NAME *s)
+// - NAME##_remove(NAME *s, T value)
+// - NAME##_print(NAME *s)
+// The macro will also define a struct with the given name, an array of type T,
+// and a top index. The array of type T will have a maximum size of MAX_SIZE.
+
+#define DEFINE_ARRAY_STACK(T, NAME, MAX_SIZE)                                  \
+    typedef struct NAME {                                                      \
+        T data[MAX_SIZE];                                                      \
+        int top;                                                               \
+    } NAME;                                                                    \
+                                                                               \
+    static inline void NAME##_init(NAME *s) { s->top = -1; }                   \
+                                                                               \
+    static inline bool NAME##_is_empty(NAME *s) { return s->top == -1; }       \
+                                                                               \
+    static inline bool NAME##_is_full(NAME *s) {                               \
+        return s->top == MAX_SIZE - 1;                                         \
+    }                                                                          \
+                                                                               \
+    static inline void NAME##_push(NAME *s, T value) {                         \
+        if (NAME##_is_full(s)) {                                               \
+            printf("Stack is full! Cannot push element.\n");                   \
+            return;                                                            \
+        }                                                                      \
+        s->data[++s->top] = value;                                             \
+    }                                                                          \
+                                                                               \
+    static inline T NAME##_pop(NAME *s) {                                      \
+        if (NAME##_is_empty(s)) {                                              \
+            printf("Stack is empty! Cannot pop element.\n");                   \
+            T dummy;                                                           \
+            return dummy; /* Return a dummy value, handle this in your code */ \
+        }                                                                      \
+        return s->data[s->top--];                                              \
+    }                                                                          \
+                                                                               \
+    static inline T NAME##_peek(NAME *s) {                                     \
+        if (NAME##_is_empty(s)) {                                              \
+            printf("Stack is empty! Cannot peek element.\n");                  \
+            T dummy;                                                           \
+            return dummy; /* Return a dummy value, handle this in your code */ \
+        }                                                                      \
+        return s->data[s->top];                                                \
+    }                                                                          \
+                                                                               \
+    static inline void NAME##_remove(NAME *s, T value) {                       \
+        if (NAME##_is_empty(s)) {                                              \
+            printf("NANO: Array is empty! Cannot remove element.\n");          \
+            return;                                                            \
+        }                                                                      \
+        int i, j;                                                              \
+        for (i = 0; i <= s->top; i++) {                                        \
+            if (s->data[i] == value) {                                         \
+                for (j = i; j < s->top; j++) {                                 \
+                    s->data[j] = s->data[j + 1];                               \
+                }                                                              \
+                s->top--;                                                      \
+                return;                                                        \
+            }                                                                  \
+        }                                                                      \
+        printf("NANO: Element not found in the array.\n");                     \
+    }                                                                          \
+                                                                               \
+    static inline void NAME##_print(NAME *s) {                                 \
+        printf("Array contents:\n");                                           \
+        for (int i = 0; i <= s->top; i++) {                                    \
+            printf("%d ", s->data[i]);                                         \
+        }                                                                      \
+        printf("\n");                                                          \
+    }
+
+// Nano Shader Pool Declarations
+// ----------------------------------------
+
+// Define an array stack for the active shaders to keep track of the indices
+DEFINE_ARRAY_STACK(int, nano_index_array, NANO_MAX_SHADERS)
+
 typedef struct nano_shader_pool_t {
     ShaderNode shaders[NANO_MAX_SHADERS];
     int shader_count;
     // One string for all shader labels used for ImGui combo boxes
     // Only updated when a shader is added or removed from the pool
     char shader_labels[64 * NANO_MAX_SHADERS];
+    nano_index_array active_shaders;
 } nano_shader_pool_t;
 
 // Nano Font Declarations
@@ -272,6 +361,18 @@ char *nano_read_file(const char *filename) {
 
 // Create a Nano WGPU buffer object within a
 int nano_create_buffer(nano_binding_info_t *binding, size_t size) {
+
+    if (binding == NULL) {
+        fprintf(stderr, "NANO: nano_create_buffer() -> Binding info is NULL\n");
+        return NANO_FAIL;
+    }
+
+    if (binding->binding_type != BUFFER) {
+        fprintf(stderr,
+                "NANO: nano_create_buffer() -> Binding type is not a buffer\n");
+        return NANO_FAIL;
+    }
+
     // Align the buffer size to the GPU cache line size of 32 bytes
     size_t gpu_cache_line_size = 32;
     size_t cache_aligned_size =
@@ -279,14 +380,14 @@ int nano_create_buffer(nano_binding_info_t *binding, size_t size) {
 
     // Create the buffer descriptor
     WGPUBufferDescriptor desc = {
-        .usage = binding->usage_flags,
+        .usage = binding->info.buffer_usage,
         .size = cache_aligned_size,
         .mappedAtCreation = false,
     };
 
     // Create the buffer as part of the binding object
-    binding->buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &desc);
-    if (binding->buffer == NULL) {
+    binding->data.buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &desc);
+    if (binding->data.buffer == NULL) {
         fprintf(stderr,
                 "NANO: nano_create_buffer() -> Could not create buffer\n");
         return NANO_FAIL;
@@ -296,12 +397,12 @@ int nano_create_buffer(nano_binding_info_t *binding, size_t size) {
 }
 
 // Get a buffer from the shader info struct using the group and binding
-WGPUBuffer* nano_get_buffer(nano_shader_t *info, int group, int binding) {
+WGPUBuffer *nano_get_buffer(nano_shader_t *info, int group, int binding) {
     if (info == NULL) {
         fprintf(stderr, "NANO: nano_get_buffer() -> Shader info is NULL\n");
         return NULL;
     }
-    
+
     // Retrieve binding index from the group_indices array
     int index = info->group_indices[group][binding];
     if (index == -1) {
@@ -309,8 +410,85 @@ WGPUBuffer* nano_get_buffer(nano_shader_t *info, int group, int binding) {
         return NULL;
     }
 
+    // Make sure the binding type is not NULL and is BUFFER
+    nano_binding_info_t *binding_info = &info->bindings[index];
+
+    if (binding_info == NULL) {
+        fprintf(stderr, "NANO: nano_get_buffer() -> Binding info is NULL\n");
+        return NULL;
+    }
+
+    if (binding_info->binding_type != BUFFER) {
+        fprintf(stderr,
+                "NANO: nano_get_buffer() -> Binding type is not a buffer\n");
+        return NULL;
+    }
+
     // Return the buffer from the binding info struct as a pointer
-    return &info->bindings[index].buffer;
+    return &info->bindings[index].data.buffer;
+}
+
+// Get the buffer size from the shader info struct using the group and binding
+size_t nano_get_buffer_size(nano_shader_t *info, int group, int binding) {
+    if (info == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_buffer_size() -> Shader info is NULL\n");
+        return 0;
+    }
+
+    // Retrieve binding index from the group_indices array
+    int index = info->group_indices[group][binding];
+    if (index == -1) {
+        fprintf(stderr, "NANO: nano_get_buffer_size() -> Binding not found\n");
+        return 0;
+    }
+
+    // Return the buffer size from the binding info struct
+    return info->bindings[index].size;
+}
+
+// Binding functions
+// -------------------------------------------------
+
+// Retrieve a binding from the shader info struct regardless of binding type
+nano_binding_info_t nano_get_binding(nano_shader_t *info, int group,
+                                     int binding) {
+    if (info == NULL) {
+        fprintf(stderr, "NANO: nano_get_binding() -> Shader info is NULL\n");
+        return (nano_binding_info_t){0};
+    }
+
+    int index = info->group_indices[group][binding];
+    if (index == -1) {
+        fprintf(stderr, "NANO: nano_get_binding() -> Binding not found\n");
+        return (nano_binding_info_t){0};
+    }
+
+    return info->bindings[index];
+}
+
+// Retrieve a binding from the shader info struct by the name
+// This is useful when working with a shader that we already know the bindings
+// of.
+nano_binding_info_t nano_get_binding_by_name(nano_shader_t *info,
+                                             const char *name) {
+    if (info == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_binding_by_name() -> Shader info is NULL\n");
+        return (nano_binding_info_t){0};
+    }
+
+    for (int i = 0; i < info->binding_count; i++) {
+        nano_binding_info_t binding = info->bindings[i];
+        if (strcmp(binding.name, name) == 0) {
+            return binding;
+        }
+    }
+
+    fprintf(stderr,
+            "NANO: nano_get_binding_by_name() -> Binding \"%s\" not found\n",
+            name);
+    return (nano_binding_info_t){0};
 }
 
 // Shader Pool Functions
@@ -330,6 +508,7 @@ void nano_init_shader_pool(nano_shader_pool_t *table) {
         table->shaders[i].occupied = false;
     }
     table->shader_count = 0;
+    nano_index_array_init(&table->active_shaders);
 }
 
 // Find a shader slot in the shader pool using the shader id
@@ -427,8 +606,8 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
     // Release the buffer objects in the shader bindings
     for (int i = 0; i < shader->binding_count; i++) {
         nano_binding_info_t binding = shader->bindings[i];
-        if (binding.buffer)
-            wgpuBufferRelease(binding.buffer);
+        if (binding.data.buffer)
+            wgpuBufferRelease(binding.data.buffer);
     }
 
     // Create a new empty shader entry at the shader slot
@@ -568,6 +747,9 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
     // Iterate over the groups and bindings to create the buffers to be
     // used for the pipeline layout
     for (int i = 0; i < MAX_GROUPS; i++) {
+
+        LOG("NANO: Shader %d: Building bindings for group %d\n", info->id, i);
+
         for (int j = 0; j < MAX_BINDINGS; j++) {
 
             // If the group index is not -1, we can create the buffer
@@ -577,19 +759,20 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
                 nano_binding_info_t *binding = &info->bindings[index];
 
                 // If the buffer usage is not none, create the buffer
-                if (binding->usage_flags != WGPUBufferUsage_None) {
+                if (binding->info.buffer_usage != WGPUBufferUsage_None) {
 
-                    LOG("NANO: Shader %d: Creating new buffer for "
-                        "binding %d "
+                    LOG("\tNANO: Shader %d: Creating new buffer for "
+                        "binding %d \"%s\" "
                         "with type %s\n",
-                        info->id, binding->binding, binding->type);
+                        info->id, binding->binding, binding->name,
+                        binding->data_type);
 
                     // Create the buffer within the shader
                     int status = nano_create_buffer(binding, buffer_size);
 
                     if (status != NANO_OK) {
                         fprintf(stderr,
-                                "NANO: Shader %d: Could not create buffer "
+                                "\tNANO: Shader %d: Could not create buffer "
                                 "for binding %d\n",
                                 info->id, binding->binding);
                         return NANO_FAIL;
@@ -597,7 +780,7 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
                     // If the buffer usage is none, we can break out of the loop
                 } else {
                     fprintf(stderr,
-                            "NANO: Shader %d: Binding %d has no usage\n",
+                            "\tNANO: Shader %d: Binding %d has no usage\n",
                             info->id, binding->binding);
                     return NANO_FAIL;
                 }
@@ -695,12 +878,13 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
             // Get the binding information from the shaderinfo struct
             nano_binding_info_t binding =
                 info->bindings[info->group_indices[i][j]];
-            WGPUBufferUsageFlags buffer_usage = binding.usage_flags;
+            WGPUBufferUsageFlags buffer_usage = binding.info.buffer_usage;
 
             // Set the according bindgroup layout entry for the
             // binding
             bgl_entries[j] = (WGPUBindGroupLayoutEntry){
                 .binding = (uint32_t)binding.binding,
+                // Temporarily set the visibility to none
                 .visibility = WGPUShaderStage_None,
                 // We use a ternary operator to determine the
                 // buffer type by inferring the type from
@@ -851,13 +1035,44 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
                 {
                     .module = vertex_shader,
                     .entryPoint = info->entry_points[vertex_index].entry,
+                    .buffers = NULL,
                     // TODO: Add other vertex attributes here
+                },
+            .primitive = {.topology = WGPUPrimitiveTopology_TriangleList,
+                          .stripIndexFormat = WGPUIndexFormat_Undefined,
+                          .frontFace = WGPUFrontFace_CCW,
+                          .cullMode = WGPUCullMode_None},
+            .multisample =
+                (WGPUMultisampleState){
+                    .count = (uint32_t)nano_app.wgpu->desc.sample_count,
+                    .mask = ~0u,
+                    .alphaToCoverageEnabled = false,
                 },
             .fragment =
                 &(WGPUFragmentState){
                     .module = fragment_shader,
                     .entryPoint = info->entry_points[fragment_index].entry,
-                    // TODO: Add other fragment attributes here
+                    .targetCount = 1,
+                    .targets =
+                        &(WGPUColorTargetState){
+                            .format = WGPUTextureFormat_BGRA8UnormSrgb,
+                            .blend =
+                                &(WGPUBlendState){
+                                    .color =
+                                        (WGPUBlendComponent){
+                                            .srcFactor = WGPUBlendFactor_One,
+                                            .dstFactor = WGPUBlendFactor_One,
+                                            .operation = WGPUBlendOperation_Add,
+                                        },
+                                    .alpha =
+                                        (WGPUBlendComponent){
+                                            .srcFactor = WGPUBlendFactor_One,
+                                            .dstFactor = WGPUBlendFactor_One,
+                                            .operation = WGPUBlendOperation_Add,
+                                        },
+                                },
+                            .writeMask = WGPUColorWriteMask_All,
+                        },
                 },
             // TODO: Add other render pipeline attributes here
         };
@@ -1023,6 +1238,7 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
            sizeof(nano_shader_t));
     // Set the slot as occupied
     nano_app.shader_pool.shaders[slot].occupied = true;
+
     // Increment the shader count
     nano_app.shader_pool.shader_count++;
 
@@ -1034,15 +1250,85 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     return shader_id;
 }
 
+// Set a shader to the active state.
+int nano_activate_shader(nano_shader_t *shader) {
+
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_activate_shader() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    // If the shader is already ctive, return early
+    if (shader->in_use) {
+        return NANO_OK;
+    }
+
+    // If the shader is not active, we can activate it
+    shader->in_use = true;
+
+    // Add the shader to the active shaders list
+    nano_index_array_push(&nano_app.shader_pool.active_shaders, shader->id);
+
+    return NANO_OK;
+}
+
+// Deactivate a shader from the active list
+int nano_deactivate_shader(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_deactivate_shader() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    // If the shader is not active, return early
+    if (!shader->in_use) {
+        return NANO_OK;
+    }
+
+    // If the shader is active, we can deactivate it
+    shader->in_use = false;
+
+    // Remove the shader from the active shaders list
+    nano_index_array_remove(&nano_app.shader_pool.active_shaders, shader->id);
+
+    return NANO_OK;
+}
+
+// Return shader id from the shader pool using the index
+int nano_get_active_shader_id(nano_shader_pool_t *table, int index) {
+    if (index < 0 || index >= table->active_shaders.top + 1) {
+        fprintf(stderr, "NANO: nano_get_active_shader_id() -> Invalid index\n");
+        return 0;
+    }
+
+    return table->active_shaders.data[index];
+}
+
+// Check if a shader is active
+bool nano_is_shader_active(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_is_shader_active() -> Shader is NULL\n");
+        return false;
+    }
+
+    return shader->in_use;
+}
+
+// Get the number of active shaders
+int nano_num_active_shaders(nano_shader_pool_t *table) {
+    return table->active_shaders.top + 1;
+}
+
 // Get the compute pipeline from the shader info struct if it exists
 WGPUComputePipeline nano_get_compute_pipeline(nano_shader_t *shader) {
     if (shader == NULL) {
-        fprintf(stderr, "NANO: nano_get_compute_pipeline() -> Shader is NULL\n");
+        fprintf(stderr,
+                "NANO: nano_get_compute_pipeline() -> Shader is NULL\n");
         return NULL;
     }
 
     if (shader->compute_pipeline == NULL) {
-        fprintf(stderr, "NANO: nano_get_compute_pipeline() -> Compute pipeline not found\n");
+        fprintf(stderr, "NANO: nano_get_compute_pipeline() -> Compute pipeline "
+                        "not found\n");
         return NULL;
     }
 
@@ -1057,7 +1343,9 @@ WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
     }
 
     if (shader->render_pipeline == NULL) {
-        fprintf(stderr, "NANO: nano_get_render_pipeline() -> Render pipeline not found\n");
+        fprintf(
+            stderr,
+            "NANO: nano_get_render_pipeline() -> Render pipeline not found\n");
         return NULL;
     }
 
@@ -1130,13 +1418,6 @@ static void nano_draw_debug_ui() {
 
     igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
     igBegin("Nano Debug", &nano_app.show_debug, ImGuiWindowFlags_None);
-    if (igButton("Open ImGui Demo Window", (ImVec2){200, 0})) {
-        show_demo = !show_demo;
-    }
-
-    // Show the ImGui demo window based on the show_demo flag
-    if (show_demo)
-        igShowDemoWindow(&show_demo);
 
     if (igCollapsingHeader_BoolPtr("About Nano", &visible,
                                    ImGuiTreeNodeFlags_CollapsingHeader)) {
@@ -1155,18 +1436,21 @@ static void nano_draw_debug_ui() {
     }
 
     // Nano Render Information
+    // --------------------------
     if (igCollapsingHeader_BoolPtr("Nano Render Information", &visible,
-                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
+                                   ImGuiTreeNodeFlags_CollapsingHeader |
+                                       ImGuiTreeNodeFlags_DefaultOpen)) {
         igText("Nano Render Information");
         igSeparator();
         igText("Frame Time: %.2f ms", nano_app.frametime);
         igText("Frames Per Second: %.2f", nano_app.fps);
-        igText("Render Resolution: (%d, %d)", nano_app.wgpu->width,
-               nano_app.wgpu->height);
+        igText("Render Resolution: (%d, %d)", (int)nano_app.wgpu->width,
+               (int)nano_app.wgpu->height);
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
     }
 
     // Nano Font Information
+    // --------------------------
     if (igCollapsingHeader_BoolPtr("Nano Font Information", &visible,
                                    ImGuiTreeNodeFlags_CollapsingHeader)) {
         nano_font_info_t *font_info = &nano_app.font_info;
@@ -1191,17 +1475,61 @@ static void nano_draw_debug_ui() {
     }
 
     // Shader Pool Information
+    // --------------------------
+
     if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", &visible,
                                    ImGuiTreeNodeFlags_CollapsingHeader)) {
 
+        // Basic shader pool information
         igText("Shader Pool Information");
-        igText("Shader Count: %zu", nano_app.shader_pool.shader_count);
+        igText("Shaders In Memory: %zu", nano_app.shader_pool.shader_count);
+        igText("Active Shaders: %d",
+               nano_num_active_shaders(&nano_app.shader_pool));
 
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
 
+        // Do not display the shader pool if there are no shaders
         if (nano_app.shader_pool.shader_count == 0) {
             igText("No shaders found.\nAdd a shader to inspect it.");
         } else {
+
+            // List all active shaders in the shader pool.
+            // --------------------------
+
+            if (igCollapsingHeader_BoolPtr(
+                    "Active Shaders", &visible,
+                    ImGuiTreeNodeFlags_CollapsingHeader |
+                        ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (nano_app.shader_pool.active_shaders.top == -1) {
+                    igText("No active shaders found.");
+                } else {
+                    igText("Active Shaders In Order Of Execution:");
+                    for (int i = 0;
+                         i < nano_app.shader_pool.active_shaders.top + 1; i++) {
+                        uint32_t shader_id =
+                            nano_app.shader_pool.active_shaders.data[i];
+                        nano_shader_t *shader =
+                            nano_get_shader(&nano_app.shader_pool, shader_id);
+                        igText("%d: %s - ID: %d", i, shader->label, shader->id);
+                        // If the shader is active, we can deactivate it
+                        // Make sure button is right of the text.
+                        if (igButton("Deactivate", (ImVec2){200, 0})) {
+                            nano_deactivate_shader(shader);
+                        }
+                    }
+                }
+            }
+
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+            // End of active shaders
+            // --------------------------
+
+            // List all shaders in the shader pool
+            // This will allow us to activate, delete, or edit/inspect the
+            // shader
+            // --------------------------
+
             static int shader_index = 0;
             igCombo_Str("Select Shader", &shader_index,
                         (const char *)nano_app.shader_pool.shader_labels, 5);
@@ -1231,6 +1559,7 @@ static void nano_draw_debug_ui() {
                                      ImGuiInputTextFlags_AllowTabInput, NULL,
                                      NULL);
 
+                igText("Shader ID: %d", shader->id);
                 if (shader->entry_indices.compute != -1 &&
                     shader->entry_indices.vertex != -1 &&
                     shader->entry_indices.fragment != -1) {
@@ -1244,18 +1573,42 @@ static void nano_draw_debug_ui() {
                     }
                 }
 
-                if (igButton("Remove Shader", (ImVec2){200, 0})) {
-                    nano_release_shader(&nano_app.shader_pool, shader_index);
+                if (!shader->in_use) {
+                    if (igButton("Remove Shader", (ImVec2){200, 0})) {
+                        nano_release_shader(&nano_app.shader_pool,
+                                            shader_index);
+                    }
+                } else {
+                    igText("Shader is currently in use.");
                 }
             }
+
+            // End of individual shader information
+            // ------------------------------------
         }
+
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
     }
 
+    // End of shader pool Information
+    // ------------------------------
+
+    // Set the clear color for the frame
     igSliderFloat4("RBGA Colour",
                    (float *)&nano_app.wgpu->default_pipeline_info.clear_color,
                    0.0f, 1.0f, "%.2f", 0);
 
+    // Button to open the ImGui demo window
+    igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    if (igButton("Open ImGui Demo Window", (ImVec2){200, 0})) {
+        show_demo = !show_demo;
+    }
+
+    // Show the ImGui demo window based on the show_demo flag
+    if (show_demo)
+        igShowDemoWindow(&show_demo);
+
+    // End of the Dear ImGui frame
     igEnd();
     igRender();
 

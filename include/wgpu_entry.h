@@ -160,8 +160,8 @@ typedef void (*wgpu_mouse_wheel_func)(float v);
 
 typedef struct {
     const char *title;
-    int res_x;
-    int res_y;
+    float res_x;
+    float res_y;
     int sample_count;
     bool no_depth_buffer;
     wgpu_init_func init_cb;
@@ -171,8 +171,8 @@ typedef struct {
 
 typedef struct {
     wgpu_desc_t desc;
-    int width;
-    int height;
+    float width;
+    float height;
     WGPUInstance instance;
     WGPUAdapter adapter;
     WGPUDevice device;
@@ -202,9 +202,9 @@ typedef struct {
     bool async_setup_done;
     bool async_setup_failed;
     double last_frame_time;
-    #ifdef CIMGUI_WGPU
-        ImGui_ImplWGPU_Data *imgui_data;
-    #endif
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_Data *imgui_data;
+#endif
 } wgpu_state_t;
 
 static wgpu_state_t state;
@@ -473,7 +473,7 @@ static void emsc_update_canvas_size() {
     state.width = (int)w;
     state.height = (int)h;
 
-    LOG("WGPU Backend -> emsc_update_canvas_size(): %d %d\n", state.width,
+    LOG("WGPU Backend -> emsc_update_canvas_size(): %.2f %.2f\n", state.width,
         state.height);
 }
 
@@ -809,9 +809,9 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
 #ifdef CIMGUI_WGPU
     // Once the swapchain is created, we can initialize ImGui
     // This is only done if the CIMGUI_WGPU macro is defined
-    state->imgui_data = ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
-                        WGPUTextureFormat_Undefined, state->desc.res_x,
-                        state->desc.res_y, state->width, state->height);
+    state->imgui_data = ImGui_ImplWGPU_Init(
+        state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
+        state->desc.res_x, state->desc.res_y, state->width, state->height);
     if (!state->imgui_data) {
         LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
         state->async_setup_failed = true;
@@ -915,7 +915,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     assert(0 == state->msaa_view);
 
     LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
-        state->width, state->height);
+        (int)state->width, (int)state->height);
 
     state->swapchain = wgpuDeviceCreateSwapChain(
         state->device, state->surface,
