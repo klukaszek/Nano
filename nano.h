@@ -207,7 +207,7 @@ typedef struct nano_shader_pool_t {
     int shader_count;
     // One string for all shader labels used for ImGui combo boxes
     // Only updated when a shader is added or removed from the pool
-    char shader_labels[64 * NANO_MAX_SHADERS];
+    char shader_labels[NANO_MAX_SHADERS * 64];
     nano_index_array active_shaders;
 } nano_shader_pool_t;
 
@@ -548,25 +548,38 @@ static int _nano_update_shader_labels() {
         return NANO_FAIL;
     }
 
-    char labels[64 * NANO_MAX_SHADERS] = "";
-
     LOG("NANO: Updating shader labels\n");
+
+    char labels[NANO_MAX_SHADERS * 64] = {0};
+    strncpy(labels, "", 1);
 
     // Concatenate all shader labels into a single string
     for (int i = 0; i < NANO_MAX_SHADERS; i++) {
         if (nano_app.shader_pool.shaders[i].occupied) {
             char *label =
                 (char *)nano_app.shader_pool.shaders[i].shader_entry.label;
-            strncat(labels, label, strlen(label));
-            strncat(labels, "\0", 1);
+            strncat(labels, label, strlen(label) + 1);
+            // Separate the labels with a ? as a placeholder for ImGui \0
+            // terminators
+            strncat(labels, "?", 1);
         }
     }
 
-    // Add an extra null terminator to the end of the string
-    strncat(labels, "\0", 1);
+    // Keep a copy of the length of the concatenated labels
+    // since once the "?" are replaced with null terminators
+    // strlen will not work properly
+    size_t len = strlen(labels);
 
-    // Set the shader labels in the shader pool
-    strncpy(nano_app.shader_pool.shader_labels, labels, strlen(labels));
+    // Replace the "?" with null terminators
+    for (int i = 0; i < len; i++) {
+        if (labels[i] == '?') {
+            labels[i] = '\0';
+        }
+    }
+
+    // Copy the concatenated labels to the shader pool labels
+    // Use memcpy to copy the null terminators as well
+    memcpy(nano_app.shader_pool.shader_labels, labels, len);
 
     return NANO_OK;
 }
@@ -828,8 +841,9 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
     int binding_count = info->binding_count;
 
     // If our nano_shader_t struct has no bindings, we can return early
-    if (info->binding_count <= 0)
-        return NANO_FAIL;
+    if (info->binding_count <= 0) {
+        return NANO_OK;
+    }
 
     // Create an array of bind group layouts for each group
     WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
@@ -992,22 +1006,8 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
     };
 
     // Declare shader modules for the different shader types
-    WGPUShaderModule vertex_shader = NULL;
-    WGPUShaderModule fragment_shader = NULL;
-    WGPUShaderModule compute_shader = NULL;
-
-    // Create the shader module for the different shader types if a valid
-    // index exists in the entry indices
-    if (compute_index != -1) {
-        compute_shader =
-            wgpuDeviceCreateShaderModule(nano_app.wgpu->device, &shader_desc);
-    } else if (vertex_index != -1) {
-        vertex_shader =
-            wgpuDeviceCreateShaderModule(nano_app.wgpu->device, &shader_desc);
-    } else if (vertex_index != -1) {
-        fragment_shader =
-            wgpuDeviceCreateShaderModule(nano_app.wgpu->device, &shader_desc);
-    }
+    WGPUShaderModule shader_module =
+        wgpuDeviceCreateShaderModule(nano_app.wgpu->device, &shader_desc);
 
     // Create the compute pipeline if the compute entry index is valid
     if (compute_index != -1) {
@@ -1015,7 +1015,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
             .layout = pipeline_layout_obj,
             .compute =
                 {
-                    .module = compute_shader,
+                    .module = shader_module,
                     .entryPoint = info->entry_points[compute_index].entry,
                 },
         };
@@ -1033,7 +1033,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
             .layout = pipeline_layout_obj,
             .vertex =
                 {
-                    .module = vertex_shader,
+                    .module = shader_module,
                     .entryPoint = info->entry_points[vertex_index].entry,
                     .buffers = NULL,
                     // TODO: Add other vertex attributes here
@@ -1050,7 +1050,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
                 },
             .fragment =
                 &(WGPUFragmentState){
-                    .module = fragment_shader,
+                    .module = shader_module,
                     .entryPoint = info->entry_points[fragment_index].entry,
                     .targetCount = 1,
                     .targets =
@@ -1092,12 +1092,8 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
     }
 
     // Release the shader modules if they are not null
-    if (vertex_shader)
-        wgpuShaderModuleRelease(vertex_shader);
-    if (fragment_shader)
-        wgpuShaderModuleRelease(fragment_shader);
-    if (compute_shader)
-        wgpuShaderModuleRelease(compute_shader);
+    if (shader_module)
+        wgpuShaderModuleRelease(shader_module);
 
     return retval;
 }
@@ -1456,10 +1452,11 @@ static void nano_draw_debug_ui() {
         nano_font_info_t *font_info = &nano_app.font_info;
         igText("Font Index: %d", font_info->font_index);
         igText("Font Size: %.2f", font_info->font_size);
+        char font_names[] = "JetBrains Mono Nerd Font\0Lilex Nerd "
+                            "Font\0Roboto\0";
+        LOG("%s\n", font_names);
         if (igCombo_Str("Select Font", (int *)&font_info->font_index,
-                        "JetBrains Mono Nerd Font\0Lilex Nerd "
-                        "Font\0Roboto\0\0",
-                        3)) {
+                        font_names, 3)) {
             nano_set_font(font_info->font_index);
         }
         igSliderFloat("Font Size", (float *)&font_info->font_size, 8.0f, 32.0f,
@@ -1532,7 +1529,8 @@ static void nano_draw_debug_ui() {
 
             static int shader_index = 0;
             igCombo_Str("Select Shader", &shader_index,
-                        (const char *)nano_app.shader_pool.shader_labels, 5);
+                        nano_app.shader_pool.shader_labels,
+                        nano_app.shader_pool.shader_count);
 
             int slot = _nano_find_shader_slot_with_index(shader_index);
             if (slot < 0) {
