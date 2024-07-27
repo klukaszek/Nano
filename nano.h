@@ -701,8 +701,9 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
 
     ImGuiIO *io = igGetIO();
 
-    // Set the app state font info to the static nano_fonts struct
-    // if no font info is provided
+    ImFontAtlas_Clear(io->Fonts);
+
+    // Set the app state font info to whatever is passed in
     memcpy(&nano_app.font_info, font_info, sizeof(nano_font_info_t));
 
     // Iterate through the fonts and add them to the font atlas
@@ -1451,22 +1452,23 @@ static void nano_default_cleanup(void) {
 // the event
 static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 
-// This represents the demo window that has all of the Nano application information
-// and settings. This is a simple window that can be toggled on and off.
-// This is a simple example of how to use the ImGui API to create a window
+// This represents the demo window that has all of the Nano application
+// information and settings. This is a simple window that can be toggled on and
+// off. This is a simple example of how to use the ImGui API to create a window
 // for a Nano application.
 static void nano_demo_window(bool *show_debug) {
 
     static bool show_demo = false;
     bool visible = true;
     bool closed = false;
-    
+
     // Set the window size
     igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
 
     // Set the window position
-    igSetNextWindowPos((ImVec2){20, 20}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-    
+    igSetNextWindowPos((ImVec2){20, 20}, ImGuiCond_FirstUseEver,
+                       (ImVec2){0, 0});
+
     // Attempt to create the window with window flags
     // If the window is not created, end the window and return
     // Otherwise, continue to create the window and add the contents
@@ -1474,7 +1476,7 @@ static void nano_demo_window(bool *show_debug) {
         igEnd();
         return;
     } else {
-        
+
         // Menu bar implementation
         // Ensure that the ImGuiWindowFlags_MenuBar flag is set in igBegin()
         if (igBeginMenuBar()) {
@@ -1507,7 +1509,7 @@ static void nano_demo_window(bool *show_debug) {
 
             igEndMenuBar();
         }
-    
+
         // About Nano
         // --------------------------
         if (igCollapsingHeader_BoolPtr("About Nano", NULL,
@@ -1608,8 +1610,7 @@ static void nano_demo_window(bool *show_debug) {
 
         // Shader Pool Information
         // --------------------------
-        if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information",
-                                       NULL,
+        if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", NULL,
                                        ImGuiTreeNodeFlags_CollapsingHeader)) {
 
             // Basic shader pool information
@@ -1756,7 +1757,7 @@ static void nano_draw_debug_ui() {
     // Will be refactored into a proper nano_cimgui_* function
     ImGui_ImplWGPU_NewFrame();
     igNewFrame();
-    
+
     // Show the debug GUI for the Nano application
     if (nano_app.show_debug) {
         nano_demo_window(&nano_app.show_debug);
@@ -1797,7 +1798,10 @@ static void nano_draw_debug_ui() {
         .depthSlice = ~0u,
         // If our view is a texture view (MSAA Samples > 1), we need
         // to resolve the texture to the swapchain texture
-        .resolveTarget = wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain),
+        .resolveTarget =
+            nano_app.settings.gfx.msaa.sample_count > 1
+                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
+                : NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
         .clearValue = {.r = clear_color[0],
@@ -1910,6 +1914,8 @@ static void nano_end_frame() {
         uint8_t current_item = nano_app.settings.gfx.msaa.msaa_index;
         nano_app.settings.gfx.msaa.sample_count =
             nano_app.settings.gfx.msaa.msaa_values[current_item];
+        nano_app.wgpu->desc.sample_count =
+            nano_app.settings.gfx.msaa.sample_count;
         wgpu_swapchain_reinit(nano_app.wgpu);
         nano_app.settings.gfx.msaa.msaa_changed = false;
         nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);

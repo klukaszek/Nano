@@ -192,6 +192,8 @@ typedef enum {
 
 // Structures
 typedef struct ImGui_ImplWGPU_Data {
+
+    ImGuiContext *imguiContext;
     WGPUDevice wgpuDevice;
     WGPUQueue defaultQueue;
     WGPUTextureFormat renderTargetFormat;
@@ -229,7 +231,7 @@ ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
                     WGPUTextureFormat render_target_format,
                     WGPUTextureFormat depth_stencil_format, float res_X,
                     float res_Y, float width, float height,
-                    uint32_t multiSampleCount);
+                    uint32_t multiSampleCount, ImGuiContext *ctx);
 static inline void ImGui_ImplWGPU_Shutdown(void);
 static inline void ImGui_ImplWGPU_NewFrame(void);
 static inline void
@@ -287,11 +289,14 @@ ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
                     WGPUTextureFormat render_target_format,
                     WGPUTextureFormat depth_stencil_format, float res_x,
                     float res_y, float width, float height,
-                    uint32_t multiSampleCount) {
-    // Inject CImGui into the WGPU context so we can use it for UI
-    // Setup Dear ImGui for WGPU
-    ImGuiContext *ctx = igCreateContext(NULL);
-    igSetCurrentContext(ctx);
+                    uint32_t multiSampleCount, ImGuiContext *ctx) {
+
+    if (ctx == NULL) {
+        ctx = igCreateContext(NULL);
+        igSetCurrentContext(ctx);
+    } else {
+        igSetCurrentContext(ctx);
+    }
 
     // Get the ImGui IO
     ImGuiIO *io = igGetIO();
@@ -313,8 +318,9 @@ ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
     ImGui_ImplWGPU_Data *bd =
         (ImGui_ImplWGPU_Data *)IM_ALLOC(sizeof(ImGui_ImplWGPU_Data));
     if (bd == NULL)
-        return false;
-
+        return NULL;
+    
+    bd->imguiContext = ctx;
     memset(bd, 0, sizeof(ImGui_ImplWGPU_Data));
     memset(bd->LastKeyPressTime, 0, sizeof(bd->LastKeyPressTime));
     memset(bd->KeyDown, 0, sizeof(bd->KeyDown));
@@ -680,6 +686,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .mipLevelCount = 1,
         .sampleCount = 1,
     };
+    if (bd->FontTexture)
+        wgpuTextureDestroy(bd->FontTexture);
     bd->FontTexture = wgpuDeviceCreateTexture(bd->wgpuDevice, &tex_desc);
 
     // Create texture view descriptor
@@ -691,6 +699,9 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .baseArrayLayer = 0,
         .arrayLayerCount = 1,
         .aspect = WGPUTextureAspect_All};
+    
+    if (bd->FontTextureView)
+        wgpuTextureViewRelease(bd->FontTextureView);
     bd->FontTextureView =
         wgpuTextureCreateView(bd->FontTexture, &tex_view_desc);
 
@@ -717,6 +728,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .minFilter = WGPUFilterMode_Linear,
         .mipmapFilter = WGPUMipmapFilterMode_Linear,
     };
+    if (bd->Sampler)
+        wgpuSamplerRelease(bd->Sampler);
     bd->Sampler = wgpuDeviceCreateSampler(bd->wgpuDevice, &sampler_desc);
 
     // Create uniform buffer
@@ -724,6 +737,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
         .size = 64, // 4x4 matrix
         .mappedAtCreation = false};
+    if (bd->Uniforms)
+        wgpuBufferDestroy(bd->Uniforms);
     bd->Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &uniform_buffer_desc);
 
     if (!bd->PipelineState)
@@ -738,6 +753,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .layout = wgpuRenderPipelineGetBindGroupLayout(bd->PipelineState, 0),
         .entryCount = 3,
         .entries = entries};
+    if (bd->CommonBindGroup)
+        wgpuBindGroupRelease(bd->CommonBindGroup);
     bd->CommonBindGroup = wgpuDeviceCreateBindGroup(bd->wgpuDevice, &bg_desc);
 
     // Set font texture ID

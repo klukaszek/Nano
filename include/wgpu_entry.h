@@ -324,6 +324,12 @@ static void wgpu_init_default_pipeline() {
         .size = sizeof(state.default_pipeline_info.clear_color),
         .mappedAtCreation = false,
     };
+
+    // Release the default uniform buffer if it exists
+    if (state.default_pipeline_info.uniform_buffer) {
+        wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
+    }
+
     state.default_pipeline_info.uniform_buffer =
         wgpuDeviceCreateBuffer(device, &uniform_buffer_desc);
 
@@ -412,6 +418,11 @@ static void wgpu_init_default_pipeline() {
             },
         .depthStencil = NULL,
     };
+    
+    // Release the default pipeline if it exists
+    if (state.default_pipeline_info.pipeline) {
+        wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
+    }
 
     // Assign the default pipeline to the nano app state
     state.default_pipeline_info.pipeline =
@@ -429,6 +440,11 @@ static void wgpu_init_default_pipeline() {
         .entryCount = 1,
         .entries = &bind_group_entry,
     };
+    
+    // Release the default bind group if it exists
+    if (state.default_pipeline_info.bind_group) {
+        wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
+    }
 
     // Assign the default bind group to the nano app state
     state.default_pipeline_info.bind_group =
@@ -815,7 +831,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     state->imgui_data = ImGui_ImplWGPU_Init(
         state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
         state->desc.res_x, state->desc.res_y, state->width, state->height,
-        state->desc.sample_count);
+        state->desc.sample_count, NULL);
     if (!state->imgui_data) {
         LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
         state->async_setup_failed = true;
@@ -1004,8 +1020,18 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
 // Handle any swapchain reinitialization
 // Normally this is called when we swap to MSAA or back to non-MSAA
 void wgpu_swapchain_reinit(wgpu_state_t *state) {
+
+    // Release the old swapchain
     wgpu_swapchain_discard(state);
+
+    // Reinitialize the swapchain
     wgpu_swapchain_init(state);
+
+#ifdef CIMGUI_WGPU
+    state->imgui_data->multiSampleCount = state->desc.sample_count;
+    ImGui_ImplWGPU_InvalidateDeviceObjects();
+    ImGui_ImplWGPU_CreateDeviceObjects();
+#endif
     wgpu_init_default_pipeline();
 }
 

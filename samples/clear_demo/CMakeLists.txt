@@ -6,7 +6,7 @@ set(EMCC_COMPILER_FLAGS "-s USE_WEBGPU=1 -s FULL_ES2=1 -O3")
 set(EMCC_LINKER_FLAGS "-s USE_WEBGPU=1 -s FULL_ES2=1 -s WASM=1")
 
 # Copy the assets to the build directory
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ALLOW_MEMORY_GROWTH=1 -s --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
 
 include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
