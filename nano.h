@@ -799,7 +799,7 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
     // Iterate over the groups and bindings to create the buffers to be
     // used for the pipeline layout
     for (int i = 0; i < MAX_GROUPS; i++) {
-        
+
         // Keep track of whether the group is empty or not
         bool group_empty = true;
 
@@ -815,7 +815,8 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
                 // If the buffer usage is not none, create the buffer
                 if (binding->info.buffer_usage != WGPUBufferUsage_None) {
 
-                    LOG("\tNANO: Shader %u: Group %d -> Creating new buffer for "
+                    LOG("\tNANO: Shader %u: Group %d -> Creating new buffer "
+                        "for "
                         "binding %d \"%s\" "
                         "with type %s\n",
                         info->id, i, binding->binding, binding->name,
@@ -844,7 +845,7 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
             // can break out of the loop early and move on to the next
             // group. This isn't perfect, but I won't have any stupid layouts.
         }
-    
+
         // If the group is empty, we can log that the group has been built
         if (!group_empty) {
             LOG("NANO: Shader %u: Built bindings for group %d\n", info->id, i);
@@ -1450,252 +1451,318 @@ static void nano_default_cleanup(void) {
 // the event
 static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 
+// This represents the demo window that has all of the Nano application information
+// and settings. This is a simple window that can be toggled on and off.
+// This is a simple example of how to use the ImGui API to create a window
+// for a Nano application.
+static void nano_demo_window(bool *show_debug) {
+
+    static bool show_demo = false;
+    bool visible = true;
+    bool closed = false;
+    
+    // Set the window size
+    igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
+
+    // Set the window position
+    igSetNextWindowPos((ImVec2){20, 20}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+    
+    // Attempt to create the window with window flags
+    // If the window is not created, end the window and return
+    // Otherwise, continue to create the window and add the contents
+    if (!igBegin("Nano Debug", show_debug, ImGuiWindowFlags_MenuBar)) {
+        igEnd();
+        return;
+    } else {
+        
+        // Menu bar implementation
+        // Ensure that the ImGuiWindowFlags_MenuBar flag is set in igBegin()
+        if (igBeginMenuBar()) {
+            if (igBeginMenu("File", true)) {
+                if (igMenuItem_BoolPtr("New", NULL, false, true)) {
+                    // Do something
+                }
+                if (igMenuItem_BoolPtr("Open", NULL, false, true)) {
+                    // Do something
+                }
+                if (igMenuItem_BoolPtr("Save", NULL, false, true)) {
+                    // Do something
+                }
+                if (igMenuItem_BoolPtr("Save As", NULL, false, true)) {
+                    // Do something
+                }
+                igSeparator();
+                if (igMenuItem_BoolPtr("Exit", NULL, false, true)) {
+                    // Do something
+                }
+                igEndMenu();
+            }
+
+            if (igBeginMenu("View", true)) {
+                if (igMenuItem_BoolPtr("Show Demo", NULL, NULL, true)) {
+                    show_demo = !show_demo;
+                }
+                igEndMenu();
+            }
+
+            igEndMenuBar();
+        }
+    
+        // About Nano
+        // --------------------------
+        if (igCollapsingHeader_BoolPtr("About Nano", NULL,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+            igSpacing();
+            igTextWrapped("Nano is a simple solution for starting a "
+                          "new WebGPU based"
+                          " application. Nano is designed to use "
+                          "C as its primary programming language. The "
+                          "only exception is "
+                          "CImGui's bindings to the original C++ "
+                          "implementation of Dear "
+                          "ImGui, but CImGui works fine. Nano is "
+                          "currently being rebuilt "
+                          "from the ground up so it is not ready for "
+                          "anything yet.");
+            igSpacing();
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        }
+
+        // Nano Render Information
+        // --------------------------
+        if (igCollapsingHeader_BoolPtr("Nano Render Information", NULL,
+                                       ImGuiTreeNodeFlags_CollapsingHeader |
+                                           ImGuiTreeNodeFlags_DefaultOpen)) {
+            igText("Nano Render Information");
+            igSeparator();
+            igText("Frame Time: %.2f ms", nano_app.frametime);
+            igText("Frames Per Second: %.2f", nano_app.fps);
+            igText("Render Resolution: (%d, %d)", (int)nano_app.wgpu->width,
+                   (int)nano_app.wgpu->height);
+
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+            // MSAA settings
+            // --------------------------
+
+            uint8_t *msaa_values = nano_app.settings.gfx.msaa.msaa_values;
+            uint8_t msaa_value = nano_app.settings.gfx.msaa.sample_count;
+            uint8_t *msaa_index = &nano_app.settings.gfx.msaa.msaa_index;
+
+            // Find the index of the current MSAA setting
+            for (int i = 0; i < 2; i++) {
+                if (msaa_values[i] == msaa_value) {
+                    *msaa_index = i;
+                    break;
+                }
+            }
+
+            if (igBeginCombo(
+                    "MSAA",
+                    nano_app.settings.gfx.msaa.msaa_options[*msaa_index],
+                    ImGuiComboFlags_None)) {
+                for (int i = 0; i < 2; i++) {
+                    bool is_selected = (*msaa_index == i);
+                    if (igSelectable_Bool(
+                            nano_app.settings.gfx.msaa.msaa_options[i],
+                            is_selected, ImGuiSelectableFlags_None,
+                            (ImVec2){0, 0})) {
+                        *msaa_index = i;
+                        nano_app.settings.gfx.msaa.msaa_changed = true;
+                    }
+                    if (is_selected) {
+                        igSetItemDefaultFocus();
+                    }
+                }
+                igEndCombo();
+            }
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        }
+        // End of Nano Render Information
+
+        // Nano Font Information
+        // --------------------------
+        if (igCollapsingHeader_BoolPtr("Nano Font Information", NULL,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+            nano_font_info_t *font_info = &nano_app.font_info;
+            igText("Font Index: %d", font_info->font_index);
+            igText("Font Size: %.2f", font_info->font_size);
+            char font_names[] = "JetBrains Mono Nerd Font\0Lilex Nerd "
+                                "Font\0Roboto\0";
+            LOG("%s\n", font_names);
+            if (igCombo_Str("Select Font", (int *)&font_info->font_index,
+                            font_names, 3)) {
+                nano_set_font(font_info->font_index);
+            }
+            igSliderFloat("Font Size", (float *)&font_info->font_size, 8.0f,
+                          32.0f, "%.2f", 1.0f);
+            // Once the slider is released, set the flag for editing the
+            // font size This requires our render pass to basically be
+            // completed before we can do this however. This is a
+            // workaround for now.
+            if (igIsItemDeactivatedAfterEdit()) {
+                nano_app.font_info.update_font = true;
+            }
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        }
+
+        // Shader Pool Information
+        // --------------------------
+        if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information",
+                                       NULL,
+                                       ImGuiTreeNodeFlags_CollapsingHeader)) {
+
+            // Basic shader pool information
+            igText("Shader Pool Information");
+            igText("Shaders In Memory: %zu", nano_app.shader_pool.shader_count);
+            igText("Active Shaders: %d",
+                   nano_num_active_shaders(&nano_app.shader_pool));
+
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+            // Do not display the shader pool if there are no shaders
+            if (nano_app.shader_pool.shader_count == 0) {
+                igText("No shaders found.\nAdd a shader to inspect it.");
+            } else {
+
+                // List all active shaders in the shader pool.
+                // --------------------------
+
+                if (igCollapsingHeader_BoolPtr(
+                        "Active Shaders", NULL,
+                        ImGuiTreeNodeFlags_CollapsingHeader |
+                            ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (nano_app.shader_pool.active_shaders.top == -1) {
+                        igText("No active shaders found.");
+                    } else {
+                        igText("Active Shaders In Order Of Execution:");
+                        for (int i = 0;
+                             i < nano_app.shader_pool.active_shaders.top + 1;
+                             i++) {
+                            uint32_t shader_id =
+                                nano_app.shader_pool.active_shaders.data[i];
+                            nano_shader_t *shader = nano_get_shader(
+                                &nano_app.shader_pool, shader_id);
+                            igText("%d: %s - ID: %d", i, shader->label,
+                                   shader->id);
+                            // If the shader is active, we can deactivate it
+                            // Make sure button is right of the text.
+                            if (igButton("Deactivate", (ImVec2){200, 0})) {
+                                nano_deactivate_shader(shader);
+                            }
+                        }
+                    }
+                }
+
+                igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+                // End of active shaders
+                // --------------------------
+
+                // List all shaders in the shader pool
+                // This will allow us to activate, delete, or edit/inspect the
+                // shader
+                // --------------------------
+
+                static int shader_index = 0;
+                igCombo_Str("Select Shader", &shader_index,
+                            nano_app.shader_pool.shader_labels,
+                            nano_app.shader_pool.shader_count);
+
+                int slot = _nano_find_shader_slot_with_index(shader_index);
+                if (slot < 0) {
+                    igText("Error: Shader not found");
+                } else {
+
+                    nano_shader_t *shader =
+                        &nano_app.shader_pool.shaders[slot].shader_entry;
+
+                    char *source = shader->source;
+                    char *label = (char *)shader->label;
+
+                    // Calculate the size of the input text box based on
+                    // the visual text size of the shader source
+                    ImVec2 size = {200, 0};
+                    igCalcTextSize(&size, source, NULL, false, 0.0f);
+
+                    // Add some padding to the size
+                    size.x += 20;
+                    size.y += 20;
+
+                    // Display the shader source in a text box
+                    igInputTextMultiline(
+                        label, source, strlen(source) * 2, size,
+                        ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
+
+                    igText("Shader ID: %d", shader->id);
+                    if (shader->entry_indices.compute != -1 &&
+                        shader->entry_indices.vertex != -1 &&
+                        shader->entry_indices.fragment != -1) {
+                        igText("Shader Types: Compute & Render");
+                    } else {
+                        if (shader->entry_indices.compute != -1) {
+                            igText("Shader Type: Compute");
+                        } else if (shader->entry_indices.vertex != -1 &&
+                                   shader->entry_indices.fragment != -1) {
+                            igText("Shader Type: Render");
+                        }
+                    }
+
+                    if (!shader->in_use) {
+                        if (igButton("Remove Shader", (ImVec2){200, 0})) {
+                            nano_release_shader(&nano_app.shader_pool,
+                                                shader_index);
+                        }
+                    } else {
+                        igText("Shader is currently in use.");
+                    }
+                }
+
+                // End of individual shader information
+                // ------------------------------------
+            }
+
+            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+        }
+
+        // End of shader pool Information
+        // ------------------------------
+
+        // Set the clear color for the frame
+        igSliderFloat4(
+            "RBGA Colour",
+            (float *)&nano_app.wgpu->default_pipeline_info.clear_color, 0.0f,
+            1.0f, "%.2f", 0);
+
+        // Button to open the ImGui demo window
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+        // Show the ImGui demo window based on the show_demo flag
+        if (show_demo)
+            igShowDemoWindow(&show_demo);
+
+        // End of the Dear ImGui frame
+        igEnd();
+    }
+}
+
 // A function that draws a CImGui frame of the current nano_app
 // state Include collapsibles for all nested structs
 static void nano_draw_debug_ui() {
-    bool visible = true;
-    bool closed = false;
 
     WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
-    static bool show_demo = false;
 
     // Necessary to call before starting a new frame
     // Will be refactored into a proper nano_cimgui_* function
     ImGui_ImplWGPU_NewFrame();
     igNewFrame();
-
-    igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
-    igBegin("Nano Debug", &nano_app.show_debug, ImGuiWindowFlags_None);
-
-    if (igCollapsingHeader_BoolPtr("About Nano", &visible,
-                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
-        igTextWrapped("Nano is a simple solution for starting a "
-                      "new WebGPU based"
-                      " application. Nano is designed to use "
-                      "C as its primary programming language. The "
-                      "only exception is "
-                      "CImGui's bindings to the original C++ "
-                      "implementation of Dear "
-                      "ImGui, but CImGui works fine. Nano is "
-                      "currently being rebuilt "
-                      "from the ground up so it is not ready for "
-                      "anything yet.");
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+    
+    // Show the debug GUI for the Nano application
+    if (nano_app.show_debug) {
+        nano_demo_window(&nano_app.show_debug);
     }
 
-    // Nano Render Information
-    // --------------------------
-    if (igCollapsingHeader_BoolPtr("Nano Render Information", &visible,
-                                   ImGuiTreeNodeFlags_CollapsingHeader |
-                                       ImGuiTreeNodeFlags_DefaultOpen)) {
-        igText("Nano Render Information");
-        igSeparator();
-        igText("Frame Time: %.2f ms", nano_app.frametime);
-        igText("Frames Per Second: %.2f", nano_app.fps);
-        igText("Render Resolution: (%d, %d)", (int)nano_app.wgpu->width,
-               (int)nano_app.wgpu->height);
-
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-
-        // MSAA settings
-        // --------------------------
-
-        uint8_t *msaa_values = nano_app.settings.gfx.msaa.msaa_values;
-        uint8_t msaa_value = nano_app.settings.gfx.msaa.sample_count;
-        uint8_t *msaa_index = &nano_app.settings.gfx.msaa.msaa_index;
-
-        // Find the index of the current MSAA setting
-        for (int i = 0; i < 2; i++) {
-            if (msaa_values[i] == msaa_value) {
-                *msaa_index = i;
-                break;
-            }
-        }
-
-        if (igBeginCombo("MSAA",
-                         nano_app.settings.gfx.msaa.msaa_options[*msaa_index],
-                         ImGuiComboFlags_None)) {
-            for (int i = 0; i < 2; i++) {
-                bool is_selected = (*msaa_index == i);
-                if (igSelectable_Bool(
-                        nano_app.settings.gfx.msaa.msaa_options[i], is_selected,
-                        ImGuiSelectableFlags_None, (ImVec2){0, 0})) {
-                    *msaa_index = i;
-                    nano_app.settings.gfx.msaa.msaa_changed = true;
-                }
-                if (is_selected) {
-                    igSetItemDefaultFocus();
-                }
-            }
-            igEndCombo();
-        }
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-    }
-    // End of Nano Render Information
-
-    // Nano Font Information
-    // --------------------------
-    if (igCollapsingHeader_BoolPtr("Nano Font Information", &visible,
-                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
-        nano_font_info_t *font_info = &nano_app.font_info;
-        igText("Font Index: %d", font_info->font_index);
-        igText("Font Size: %.2f", font_info->font_size);
-        char font_names[] = "JetBrains Mono Nerd Font\0Lilex Nerd "
-                            "Font\0Roboto\0";
-        LOG("%s\n", font_names);
-        if (igCombo_Str("Select Font", (int *)&font_info->font_index,
-                        font_names, 3)) {
-            nano_set_font(font_info->font_index);
-        }
-        igSliderFloat("Font Size", (float *)&font_info->font_size, 8.0f, 32.0f,
-                      "%.2f", 1.0f);
-        // Once the slider is released, set the flag for editing the
-        // font size This requires our render pass to basically be
-        // completed before we can do this however. This is a
-        // workaround for now.
-        if (igIsItemDeactivatedAfterEdit()) {
-            nano_app.font_info.update_font = true;
-        }
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-    }
-
-    // Shader Pool Information
-    // --------------------------
-
-    if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", &visible,
-                                   ImGuiTreeNodeFlags_CollapsingHeader)) {
-
-        // Basic shader pool information
-        igText("Shader Pool Information");
-        igText("Shaders In Memory: %zu", nano_app.shader_pool.shader_count);
-        igText("Active Shaders: %d",
-               nano_num_active_shaders(&nano_app.shader_pool));
-
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-
-        // Do not display the shader pool if there are no shaders
-        if (nano_app.shader_pool.shader_count == 0) {
-            igText("No shaders found.\nAdd a shader to inspect it.");
-        } else {
-
-            // List all active shaders in the shader pool.
-            // --------------------------
-
-            if (igCollapsingHeader_BoolPtr(
-                    "Active Shaders", &visible,
-                    ImGuiTreeNodeFlags_CollapsingHeader |
-                        ImGuiTreeNodeFlags_DefaultOpen)) {
-                if (nano_app.shader_pool.active_shaders.top == -1) {
-                    igText("No active shaders found.");
-                } else {
-                    igText("Active Shaders In Order Of Execution:");
-                    for (int i = 0;
-                         i < nano_app.shader_pool.active_shaders.top + 1; i++) {
-                        uint32_t shader_id =
-                            nano_app.shader_pool.active_shaders.data[i];
-                        nano_shader_t *shader =
-                            nano_get_shader(&nano_app.shader_pool, shader_id);
-                        igText("%d: %s - ID: %d", i, shader->label, shader->id);
-                        // If the shader is active, we can deactivate it
-                        // Make sure button is right of the text.
-                        if (igButton("Deactivate", (ImVec2){200, 0})) {
-                            nano_deactivate_shader(shader);
-                        }
-                    }
-                }
-            }
-
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-
-            // End of active shaders
-            // --------------------------
-
-            // List all shaders in the shader pool
-            // This will allow us to activate, delete, or edit/inspect the
-            // shader
-            // --------------------------
-
-            static int shader_index = 0;
-            igCombo_Str("Select Shader", &shader_index,
-                        nano_app.shader_pool.shader_labels,
-                        nano_app.shader_pool.shader_count);
-
-            int slot = _nano_find_shader_slot_with_index(shader_index);
-            if (slot < 0) {
-                igText("Error: Shader not found");
-            } else {
-
-                nano_shader_t *shader =
-                    &nano_app.shader_pool.shaders[slot].shader_entry;
-
-                char *source = shader->source;
-                char *label = (char *)shader->label;
-
-                // Calculate the size of the input text box based on
-                // the visual text size of the shader source
-                ImVec2 size = {200, 0};
-                igCalcTextSize(&size, source, NULL, false, 0.0f);
-
-                // Add some padding to the size
-                size.x += 20;
-                size.y += 20;
-
-                // Display the shader source in a text box
-                igInputTextMultiline(label, source, strlen(source) * 2, size,
-                                     ImGuiInputTextFlags_AllowTabInput, NULL,
-                                     NULL);
-
-                igText("Shader ID: %d", shader->id);
-                if (shader->entry_indices.compute != -1 &&
-                    shader->entry_indices.vertex != -1 &&
-                    shader->entry_indices.fragment != -1) {
-                    igText("Shader Types: Compute & Render");
-                } else {
-                    if (shader->entry_indices.compute != -1) {
-                        igText("Shader Type: Compute");
-                    } else if (shader->entry_indices.vertex != -1 &&
-                               shader->entry_indices.fragment != -1) {
-                        igText("Shader Type: Render");
-                    }
-                }
-
-                if (!shader->in_use) {
-                    if (igButton("Remove Shader", (ImVec2){200, 0})) {
-                        nano_release_shader(&nano_app.shader_pool,
-                                            shader_index);
-                    }
-                } else {
-                    igText("Shader is currently in use.");
-                }
-            }
-
-            // End of individual shader information
-            // ------------------------------------
-        }
-
-        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-    }
-
-    // End of shader pool Information
-    // ------------------------------
-
-    // Set the clear color for the frame
-    igSliderFloat4("RBGA Colour",
-                   (float *)&nano_app.wgpu->default_pipeline_info.clear_color,
-                   0.0f, 1.0f, "%.2f", 0);
-
-    // Button to open the ImGui demo window
-    igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
-    if (igButton("Open ImGui Demo Window", (ImVec2){200, 0})) {
-        show_demo = !show_demo;
-    }
-
-    // Show the ImGui demo window based on the show_demo flag
-    if (show_demo)
-        igShowDemoWindow(&show_demo);
-
-    // End of the Dear ImGui frame
-    igEnd();
+    // Create the draw data for the ImGui frame
     igRender();
 
     float *clear_color =
@@ -1730,10 +1797,7 @@ static void nano_draw_debug_ui() {
         .depthSlice = ~0u,
         // If our view is a texture view (MSAA Samples > 1), we need
         // to resolve the texture to the swapchain texture
-        .resolveTarget =
-            // nano_app.settings.gfx.msaa.sample_count > 1
-        wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain),
-        // : NULL,
+        .resolveTarget = wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain),
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
         .clearValue = {.r = clear_color[0],
@@ -1819,10 +1883,7 @@ static WGPUCommandEncoder nano_start_frame() {
 static void nano_end_frame() {
 
     // Draw the debug UI
-    if (nano_app.show_debug) {
-        nano_draw_debug_ui();
-        // Release the buffer since we no longer need itebug_ui();
-    }
+    nano_draw_debug_ui();
 
     // Create a command buffer so that we can submit the command
     // encoder

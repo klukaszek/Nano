@@ -489,6 +489,7 @@ static EM_BOOL emsc_size_changed(int event_type,
     // // userdata.
     // wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
+    wgpu_swapchain_reinit(&state);
 #ifdef CIMGUI_WGPU
     ImGui_ImplWGPU_ScaleUIToCanvas(state.desc.res_x, state.desc.res_y,
                                    state.width, state.height);
