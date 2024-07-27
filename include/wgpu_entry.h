@@ -1000,26 +1000,12 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
     }
 }
 
+// Handle any swapchain reinitialization
+// Normally this is called when we swap to MSAA or back to non-MSAA
 void wgpu_swapchain_reinit(wgpu_state_t *state) {
     wgpu_swapchain_discard(state);
     wgpu_swapchain_init(state);
-    if (state->msaa_view != 0) {
-        LOG("WGPU Backend: MSAA texture reinitialized.\n");
-    }
     wgpu_init_default_pipeline();
-#ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_Shutdown();
-    state->imgui_data = ImGui_ImplWGPU_Init(
-        state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
-        state->desc.res_x, state->desc.res_y, state->width, state->height,
-        state->desc.sample_count);
-    if (!state->imgui_data) {
-        LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
-        state->async_setup_failed = true;
-        return;
-    }
-    ImGui_ImplWGPU_CreateDeviceObjects();
-#endif
 }
 
 void wgpu_stop(void) {

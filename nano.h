@@ -286,6 +286,10 @@ typedef struct nano_gfx_settings_t {
 
 } nano_gfx_settings_t;
 
+typedef struct nano_settings_t {
+    nano_gfx_settings_t gfx;
+} nano_settings_t;
+
 nano_gfx_settings_t nano_default_gfx_settings() {
     return (nano_gfx_settings_t){
         .msaa =
@@ -299,6 +303,12 @@ nano_gfx_settings_t nano_default_gfx_settings() {
     };
 }
 
+nano_settings_t nano_default_settings() {
+    return (nano_settings_t){
+        .gfx = nano_default_gfx_settings(),
+    };
+}
+
 // This is the struct that will hold all of the running application data
 // In simple terms, this is the state of the application
 typedef struct nano_t {
@@ -308,7 +318,7 @@ typedef struct nano_t {
     float fps;
     nano_font_info_t font_info;
     nano_shader_pool_t shader_pool;
-    nano_gfx_settings_t gfx_settings;
+    nano_settings_t settings;
 } nano_t;
 
 // Initialize a static nano_t struct to hold the running application data
@@ -319,7 +329,7 @@ static nano_t nano_app = {
     .fps = 0.0f,
     .font_info = {0},
     .shader_pool = {0},
-    .gfx_settings = {0},
+    .settings = {0},
 };
 
 // Misc Functions
@@ -784,27 +794,31 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
         info->group_indices[binding.group][binding.binding] = i;
     }
 
+    LOG("NANO: Shader %u: Building bindings...\n", info->id);
+
     // Iterate over the groups and bindings to create the buffers to be
     // used for the pipeline layout
     for (int i = 0; i < MAX_GROUPS; i++) {
-
-        LOG("NANO: Shader %d: Building bindings for group %d\n", info->id, i);
+        
+        // Keep track of whether the group is empty or not
+        bool group_empty = true;
 
         for (int j = 0; j < MAX_BINDINGS; j++) {
 
             // If the group index is not -1, we can create the buffer
             // Otherwise, we can break out of the loop early
             if (info->group_indices[i][j] != -1) {
+                group_empty = false;
                 int index = info->group_indices[i][j];
                 nano_binding_info_t *binding = &info->bindings[index];
 
                 // If the buffer usage is not none, create the buffer
                 if (binding->info.buffer_usage != WGPUBufferUsage_None) {
 
-                    LOG("\tNANO: Shader %d: Creating new buffer for "
+                    LOG("\tNANO: Shader %u: Group %d -> Creating new buffer for "
                         "binding %d \"%s\" "
                         "with type %s\n",
-                        info->id, binding->binding, binding->name,
+                        info->id, i, binding->binding, binding->name,
                         binding->data_type);
 
                     // Create the buffer within the shader
@@ -812,7 +826,7 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
 
                     if (status != NANO_OK) {
                         fprintf(stderr,
-                                "\tNANO: Shader %d: Could not create buffer "
+                                "\tNANO: Shader %u: Could not create buffer "
                                 "for binding %d\n",
                                 info->id, binding->binding);
                         return NANO_FAIL;
@@ -820,7 +834,7 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
                     // If the buffer usage is none, we can break out of the loop
                 } else {
                     fprintf(stderr,
-                            "\tNANO: Shader %d: Binding %d has no usage\n",
+                            "\tNANO: Shader %u: Binding %d has no usage\n",
                             info->id, binding->binding);
                     return NANO_FAIL;
                 }
@@ -829,6 +843,11 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
             // should be no more bindings left in the group. This means we
             // can break out of the loop early and move on to the next
             // group. This isn't perfect, but I won't have any stupid layouts.
+        }
+    
+        // If the group is empty, we can log that the group has been built
+        if (!group_empty) {
+            LOG("NANO: Shader %u: Built bindings for group %d\n", info->id, i);
         }
     }
 
@@ -875,7 +894,7 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
     // Create an array of bind group layouts for each group
     WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
     if (info->binding_count >= MAX_BINDINGS) {
-        fprintf(stderr, "NANO: Shader %d: Too many bindings\n", info->id);
+        fprintf(stderr, "NANO: Shader %u: Too many bindings\n", info->id);
         return NANO_FAIL;
     }
 
@@ -893,7 +912,7 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
     // descriptor and the compute pipeline descriptor.
     int status = nano_build_bindings(info, buffer_size);
     if (status != NANO_OK) {
-        fprintf(stderr, "NANO: Shader %d: Could not build bindings\n",
+        fprintf(stderr, "NANO: Shader %u: Could not build bindings\n",
                 info->id);
         return NANO_FAIL;
     }
@@ -958,7 +977,7 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
         };
 
         if (num_bindings != 0) {
-            LOG("NANO: Shader %d: Creating bind group layout for group "
+            LOG("NANO: Shader %u: Creating bind group layout for group "
                 "%d with %d entries\n",
                 info->id, num_groups, num_bindings);
 
@@ -969,7 +988,7 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
                 nano_app.wgpu->device, &bg_layout_desc);
             if (bg_layouts[i] == NULL) {
                 fprintf(stderr,
-                        "NANO: Shader %d: Could not create bind group "
+                        "NANO: Shader %u: Could not create bind group "
                         "layout for group %d\n",
                         info->id, num_groups);
                 return NANO_FAIL;
@@ -1072,7 +1091,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
                           .cullMode = WGPUCullMode_None},
             .multisample =
                 (WGPUMultisampleState){
-                    .count = (uint32_t)nano_app.gfx_settings.msaa.sample_count,
+                    .count = (uint32_t)nano_app.settings.gfx.msaa.sample_count,
                     .mask = ~0u,
                     .alphaToCoverageEnabled = false,
                 },
@@ -1113,7 +1132,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
         // not, we can't create a render pipeline
     } else if (vertex_index != -1 || fragment_index != -1) {
         fprintf(stderr,
-                "NANO: Shader %d: Could not create render pipeline. Missing "
+                "NANO: Shader %u: Could not create render pipeline. Missing "
                 "paired vertex/fragment shader\n",
                 info->id);
         retval = NANO_FAIL;
@@ -1190,9 +1209,9 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     if (label == NULL) {
         // Shader label
         char default_label[64];
-        snprintf(default_label, 64, "Shader %d", shader_id);
+        snprintf(default_label, 64, "Shader %u", shader_id);
         label = default_label;
-        LOG("NANO: Using default label for shader %d\n", shader_id);
+        LOG("NANO: Using default label for shader %u\n", shader_id);
         LOG("NANO: Default label: %s\n", label);
     }
 
@@ -1266,7 +1285,7 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     // Increment the shader count
     nano_app.shader_pool.shader_count++;
 
-    LOG("NANO: Created shader %d\n", shader_id);
+    LOG("NANO: Successfully Created Shader -> %u\n", shader_id);
 
     // Update the shader labels for the ImGui combo boxes
     _nano_update_shader_labels();
@@ -1400,12 +1419,9 @@ static void nano_default_init(void) {
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
 
-    nano_app.gfx_settings = nano_default_gfx_settings();
+    nano_app.settings = nano_default_settings();
 
-    nano_app.gfx_settings.msaa.sample_count = nano_app.wgpu->desc.sample_count;
-
-    LOG("NANO: MSAA Sample Count: %d\n",
-        nano_app.gfx_settings.msaa.sample_count);
+    nano_app.settings.gfx.msaa.sample_count = nano_app.wgpu->desc.sample_count;
 
     LOG("NANO: Initialized\n");
 }
@@ -1484,9 +1500,9 @@ static void nano_draw_debug_ui() {
         // MSAA settings
         // --------------------------
 
-        uint8_t *msaa_values = nano_app.gfx_settings.msaa.msaa_values;
-        uint8_t msaa_value = nano_app.gfx_settings.msaa.sample_count;
-        uint8_t *msaa_index = &nano_app.gfx_settings.msaa.msaa_index;
+        uint8_t *msaa_values = nano_app.settings.gfx.msaa.msaa_values;
+        uint8_t msaa_value = nano_app.settings.gfx.msaa.sample_count;
+        uint8_t *msaa_index = &nano_app.settings.gfx.msaa.msaa_index;
 
         // Find the index of the current MSAA setting
         for (int i = 0; i < 2; i++) {
@@ -1497,15 +1513,15 @@ static void nano_draw_debug_ui() {
         }
 
         if (igBeginCombo("MSAA",
-                         nano_app.gfx_settings.msaa.msaa_options[*msaa_index],
+                         nano_app.settings.gfx.msaa.msaa_options[*msaa_index],
                          ImGuiComboFlags_None)) {
             for (int i = 0; i < 2; i++) {
                 bool is_selected = (*msaa_index == i);
                 if (igSelectable_Bool(
-                        nano_app.gfx_settings.msaa.msaa_options[i], is_selected,
+                        nano_app.settings.gfx.msaa.msaa_options[i], is_selected,
                         ImGuiSelectableFlags_None, (ImVec2){0, 0})) {
                     *msaa_index = i;
-                    nano_app.gfx_settings.msaa.msaa_changed = true;
+                    nano_app.settings.gfx.msaa.msaa_changed = true;
                 }
                 if (is_selected) {
                     igSetItemDefaultFocus();
@@ -1715,7 +1731,7 @@ static void nano_draw_debug_ui() {
         // If our view is a texture view (MSAA Samples > 1), we need
         // to resolve the texture to the swapchain texture
         .resolveTarget =
-            // nano_app.gfx_settings.msaa.sample_count > 1
+            // nano_app.settings.gfx.msaa.sample_count > 1
         wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain),
         // : NULL,
         .loadOp = WGPULoadOp_Clear,
@@ -1829,12 +1845,12 @@ static void nano_end_frame() {
     // ------------------------------------------
 
     // Update the MSAA settings
-    if (nano_app.gfx_settings.msaa.msaa_changed) {
-        uint8_t current_item = nano_app.gfx_settings.msaa.msaa_index;
-        nano_app.gfx_settings.msaa.sample_count =
-            nano_app.gfx_settings.msaa.msaa_values[current_item];
+    if (nano_app.settings.gfx.msaa.msaa_changed) {
+        uint8_t current_item = nano_app.settings.gfx.msaa.msaa_index;
+        nano_app.settings.gfx.msaa.sample_count =
+            nano_app.settings.gfx.msaa.msaa_values[current_item];
         wgpu_swapchain_reinit(nano_app.wgpu);
-        nano_app.gfx_settings.msaa.msaa_changed = false;
+        nano_app.settings.gfx.msaa.msaa_changed = false;
         nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
     }
 
