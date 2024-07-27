@@ -237,7 +237,7 @@ int main(int argc, char *argv[]) {
         .init_cb = init,
         .frame_cb = frame,
         .shutdown_cb = shutdown,
-        .sample_count = 1,
+        .sample_count = 4,
     });
     return 0;
 }

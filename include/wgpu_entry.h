@@ -162,7 +162,7 @@ typedef struct {
     const char *title;
     float res_x;
     float res_y;
-    int sample_count;
+    uint32_t sample_count;
     bool no_depth_buffer;
     wgpu_init_func init_cb;
     wgpu_frame_func frame_cb;
@@ -222,6 +222,7 @@ static wgpu_state_t state;
 // (in this case its just emscripten)
 void wgpu_platform_start(wgpu_state_t *state);
 void wgpu_swapchain_init(wgpu_state_t *state);
+void wgpu_swapchain_reinit(wgpu_state_t *state);
 static double emsc_get_frametime(void);
 static bool emsc_fullscreen(char *id);
 
@@ -374,6 +375,7 @@ static void wgpu_init_default_pipeline() {
     // Create render pipeline
     WGPURenderPipelineDescriptor pipeline_desc = {
         .layout = pipeline_layout,
+        .label = "Nano Default Render Pipeline",
         .vertex =
             (WGPUVertexState){
                 .module = shader,
@@ -390,7 +392,7 @@ static void wgpu_init_default_pipeline() {
                                  .cullMode = WGPUCullMode_None},
         .multisample =
             (WGPUMultisampleState){
-                .count = 1,
+                .count = state.desc.sample_count,
                 .mask = ~0u,
                 .alphaToCoverageEnabled = false,
             },
@@ -811,7 +813,8 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     // This is only done if the CIMGUI_WGPU macro is defined
     state->imgui_data = ImGui_ImplWGPU_Init(
         state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
-        state->desc.res_x, state->desc.res_y, state->width, state->height);
+        state->desc.res_x, state->desc.res_y, state->width, state->height,
+        state->desc.sample_count);
     if (!state->imgui_data) {
         LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
         state->async_setup_failed = true;
@@ -860,7 +863,6 @@ static EM_BOOL emsc_frame(double time, void *userdata) {
 
 /// Start platform specific code
 void wgpu_platform_start(wgpu_state_t *state) {
-    assert(state->instance == 0);
 
     // Set the exit callback for the application
     atexit(state->desc.shutdown_cb);
@@ -952,6 +954,8 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     }
 
     if (state->desc.sample_count > 1) {
+        LOG("WGPU Backend: Creating MSAA texture with dimensions: %dx%d\n",
+            (int)state->width, (int)state->height);
         state->msaa_tex = wgpuDeviceCreateTexture(
             state->device,
             &(WGPUTextureDescriptor){
@@ -996,6 +1000,28 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
     }
 }
 
+void wgpu_swapchain_reinit(wgpu_state_t *state) {
+    wgpu_swapchain_discard(state);
+    wgpu_swapchain_init(state);
+    if (state->msaa_view != 0) {
+        LOG("WGPU Backend: MSAA texture reinitialized.\n");
+    }
+    wgpu_init_default_pipeline();
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_Shutdown();
+    state->imgui_data = ImGui_ImplWGPU_Init(
+        state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
+        state->desc.res_x, state->desc.res_y, state->width, state->height,
+        state->desc.sample_count);
+    if (!state->imgui_data) {
+        LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
+        state->async_setup_failed = true;
+        return;
+    }
+    ImGui_ImplWGPU_CreateDeviceObjects();
+#endif
+}
+
 void wgpu_stop(void) {
     if (state.desc.shutdown_cb) {
         state.desc.shutdown_cb();
@@ -1029,6 +1055,8 @@ void wgpu_stop(void) {
         state.default_pipeline_info.bind_group = 0;
     }
 
+#ifdef CIMGUI_WGPU
     ImGui_ImplWGPU_Shutdown();
+#endif
 }
 #endif // WGPU_ENTRY_H

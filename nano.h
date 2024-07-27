@@ -274,6 +274,31 @@ static nano_font_info_t nano_fonts = {
 
 typedef wgpu_state_t nano_wgpu_state_t;
 
+typedef struct nano_gfx_settings_t {
+
+    struct msaa_t {
+        uint8_t sample_count;
+        bool msaa_changed;
+        uint8_t msaa_values[2];
+        const char *msaa_options[2];
+        uint8_t msaa_index;
+    } msaa;
+
+} nano_gfx_settings_t;
+
+nano_gfx_settings_t nano_default_gfx_settings() {
+    return (nano_gfx_settings_t){
+        .msaa =
+            {
+                .sample_count = 1,
+                .msaa_changed = false,
+                .msaa_values = {1, 4},
+                .msaa_options = {"Off", "4x MSAA"},
+                .msaa_index = 0,
+            },
+    };
+}
+
 // This is the struct that will hold all of the running application data
 // In simple terms, this is the state of the application
 typedef struct nano_t {
@@ -283,6 +308,7 @@ typedef struct nano_t {
     float fps;
     nano_font_info_t font_info;
     nano_shader_pool_t shader_pool;
+    nano_gfx_settings_t gfx_settings;
 } nano_t;
 
 // Initialize a static nano_t struct to hold the running application data
@@ -293,6 +319,7 @@ static nano_t nano_app = {
     .fps = 0.0f,
     .font_info = {0},
     .shader_pool = {0},
+    .gfx_settings = {0},
 };
 
 // Misc Functions
@@ -1031,6 +1058,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
 
         WGPURenderPipelineDescriptor renderPipelineDesc = {
             .layout = pipeline_layout_obj,
+            .label = (const char *)info->label,
             .vertex =
                 {
                     .module = shader_module,
@@ -1044,7 +1072,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
                           .cullMode = WGPUCullMode_None},
             .multisample =
                 (WGPUMultisampleState){
-                    .count = (uint32_t)nano_app.wgpu->desc.sample_count,
+                    .count = (uint32_t)nano_app.gfx_settings.msaa.sample_count,
                     .mask = ~0u,
                     .alphaToCoverageEnabled = false,
                 },
@@ -1372,6 +1400,13 @@ static void nano_default_init(void) {
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
 
+    nano_app.gfx_settings = nano_default_gfx_settings();
+
+    nano_app.gfx_settings.msaa.sample_count = nano_app.wgpu->desc.sample_count;
+
+    LOG("NANO: MSAA Sample Count: %d\n",
+        nano_app.gfx_settings.msaa.sample_count);
+
     LOG("NANO: Initialized\n");
 }
 
@@ -1404,6 +1439,7 @@ static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 static void nano_draw_debug_ui() {
     bool visible = true;
     bool closed = false;
+
     WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
     static bool show_demo = false;
 
@@ -1442,8 +1478,44 @@ static void nano_draw_debug_ui() {
         igText("Frames Per Second: %.2f", nano_app.fps);
         igText("Render Resolution: (%d, %d)", (int)nano_app.wgpu->width,
                (int)nano_app.wgpu->height);
+
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
+        // MSAA settings
+        // --------------------------
+
+        uint8_t *msaa_values = nano_app.gfx_settings.msaa.msaa_values;
+        uint8_t msaa_value = nano_app.gfx_settings.msaa.sample_count;
+        uint8_t *msaa_index = &nano_app.gfx_settings.msaa.msaa_index;
+
+        // Find the index of the current MSAA setting
+        for (int i = 0; i < 2; i++) {
+            if (msaa_values[i] == msaa_value) {
+                *msaa_index = i;
+                break;
+            }
+        }
+
+        if (igBeginCombo("MSAA",
+                         nano_app.gfx_settings.msaa.msaa_options[*msaa_index],
+                         ImGuiComboFlags_None)) {
+            for (int i = 0; i < 2; i++) {
+                bool is_selected = (*msaa_index == i);
+                if (igSelectable_Bool(
+                        nano_app.gfx_settings.msaa.msaa_options[i], is_selected,
+                        ImGuiSelectableFlags_None, (ImVec2){0, 0})) {
+                    *msaa_index = i;
+                    nano_app.gfx_settings.msaa.msaa_changed = true;
+                }
+                if (is_selected) {
+                    igSetItemDefaultFocus();
+                }
+            }
+            igEndCombo();
+        }
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
     }
+    // End of Nano Render Information
 
     // Nano Font Information
     // --------------------------
@@ -1643,9 +1715,9 @@ static void nano_draw_debug_ui() {
         // If our view is a texture view (MSAA Samples > 1), we need
         // to resolve the texture to the swapchain texture
         .resolveTarget =
-            state.desc.sample_count > 1
-                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
-                : NULL,
+            // nano_app.gfx_settings.msaa.sample_count > 1
+        wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain),
+        // : NULL,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
         .clearValue = {.r = clear_color[0],
@@ -1736,11 +1808,6 @@ static void nano_end_frame() {
         // Release the buffer since we no longer need itebug_ui();
     }
 
-    // Update the font size if the flag is set
-    if (nano_app.font_info.update_font) {
-        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
-    }
-
     // Create a command buffer so that we can submit the command
     // encoder
     WGPUCommandBufferDescriptor cmd_buffer_desc = {
@@ -1757,4 +1824,22 @@ static void nano_end_frame() {
 
     // Release the command encoder after the frame is done
     wgpuCommandEncoderRelease(nano_app.wgpu->cmd_encoder);
+
+    // Settings to update at the end of the frame
+    // ------------------------------------------
+
+    // Update the MSAA settings
+    if (nano_app.gfx_settings.msaa.msaa_changed) {
+        uint8_t current_item = nano_app.gfx_settings.msaa.msaa_index;
+        nano_app.gfx_settings.msaa.sample_count =
+            nano_app.gfx_settings.msaa.msaa_values[current_item];
+        wgpu_swapchain_reinit(nano_app.wgpu);
+        nano_app.gfx_settings.msaa.msaa_changed = false;
+        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+    }
+
+    // Update the font size if the flag is set
+    if (nano_app.font_info.update_font) {
+        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+    }
 }

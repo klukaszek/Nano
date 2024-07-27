@@ -199,6 +199,7 @@ typedef struct ImGui_ImplWGPU_Data {
     uint32_t numFramesInFlight;
     uint32_t frameIndex;
     float deltaTime;
+    uint32_t multiSampleCount;
 
     // Key States
     double LastKeyPressTime[512];
@@ -223,18 +224,18 @@ typedef struct ImGui_ImplWGPU_Data {
 // ----------------------------------------------------------------------------
 
 // Forward declarations
-static inline ImGui_ImplWGPU_Data* ImGui_ImplWGPU_Init(WGPUDevice device,
-                                       int num_frames_in_flight,
-                                       WGPUTextureFormat render_target_format,
-                                       WGPUTextureFormat depth_stencil_format,
-                                       float res_X, float res_Y,
-                                       float width, float height);
+static inline ImGui_ImplWGPU_Data *
+ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
+                    WGPUTextureFormat render_target_format,
+                    WGPUTextureFormat depth_stencil_format, float res_X,
+                    float res_Y, float width, float height,
+                    uint32_t multiSampleCount);
 static inline void ImGui_ImplWGPU_Shutdown(void);
 static inline void ImGui_ImplWGPU_NewFrame(void);
 static inline void
 ImGui_ImplWGPU_RenderDrawData(ImDrawData *draw_data,
                               WGPURenderPassEncoder pass_encoder);
-static inline bool ImGui_ImplWGPU_CreateDeviceObjects(void);
+static inline bool ImGui_ImplWGPU_CreateDeviceObjects();
 static inline void ImGui_ImplWGPU_InvalidateDeviceObjects(void);
 static inline WGPUShaderModule
 ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device, const char *source);
@@ -248,7 +249,8 @@ static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta);
 static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
                                                           bool down);
 static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y);
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y, float width, float height);
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y,
+                                                  float width, float height);
 
 // Function Implementations
 // ----------------------------------------------------------------------------
@@ -280,17 +282,17 @@ static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device,
 }
 
 // Initialize the WGPU backend for ImGui
-static inline ImGui_ImplWGPU_Data* ImGui_ImplWGPU_Init(WGPUDevice device,
-                                       int num_frames_in_flight,
-                                       WGPUTextureFormat render_target_format,
-                                       WGPUTextureFormat depth_stencil_format,
-                                       float res_x, float res_y,
-                                       float width, float height) {
+static inline ImGui_ImplWGPU_Data *
+ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
+                    WGPUTextureFormat render_target_format,
+                    WGPUTextureFormat depth_stencil_format, float res_x,
+                    float res_y, float width, float height,
+                    uint32_t multiSampleCount) {
     // Inject CImGui into the WGPU context so we can use it for UI
     // Setup Dear ImGui for WGPU
     ImGuiContext *ctx = igCreateContext(NULL);
     igSetCurrentContext(ctx);
-    
+
     // Get the ImGui IO
     ImGuiIO *io = igGetIO();
 
@@ -332,6 +334,7 @@ static inline ImGui_ImplWGPU_Data* ImGui_ImplWGPU_Init(WGPUDevice device,
     bd->numFramesInFlight = (uint32_t)num_frames_in_flight;
     bd->frameIndex = UINT32_MAX;
     bd->deltaTime = 0.0f;
+    bd->multiSampleCount = multiSampleCount;
 
     // Initialize buffer sizes
     bd->VertexBufferSize = 5000;
@@ -389,7 +392,7 @@ inline void ImGui_ImplWGPU_NewFrame(void) {
 }
 
 // Create WGPU device objects (pipeline, buffers, textures, etc.)
-inline bool ImGui_ImplWGPU_CreateDeviceObjects(void) {
+static inline bool ImGui_ImplWGPU_CreateDeviceObjects() {
     ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
     if (!bd->wgpuDevice)
         return false;
@@ -491,6 +494,7 @@ inline bool ImGui_ImplWGPU_CreateDeviceObjects(void) {
     // Create render pipeline
     WGPURenderPipelineDescriptor pipeline_desc = {
         .layout = pipeline_layout,
+        .label = "Dear ImGui Pipeline",
         .vertex = (WGPUVertexState){.module = vert_module,
                                     .entryPoint = "main",
                                     .bufferCount = 1,
@@ -500,7 +504,7 @@ inline bool ImGui_ImplWGPU_CreateDeviceObjects(void) {
                                  .stripIndexFormat = WGPUIndexFormat_Undefined,
                                  .frontFace = WGPUFrontFace_CW,
                                  .cullMode = WGPUCullMode_None},
-        .multisample = (WGPUMultisampleState){.count = 1,
+        .multisample = (WGPUMultisampleState){.count = bd->multiSampleCount,
                                               .mask = ~0u,
                                               .alphaToCoverageEnabled = false},
         .fragment = &(WGPUFragmentState){.module = frag_module,
@@ -856,7 +860,8 @@ static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta) {
     ImGuiIO_AddMouseWheelEvent(io, 0.0f, delta);
 }
 
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y, float width, float height) {
+static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y,
+                                                  float width, float height) {
 
     // Calculate scale factor based on expected resolution
     float scale_x = res_x / width;
