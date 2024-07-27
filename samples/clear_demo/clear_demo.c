@@ -12,6 +12,7 @@ char SHADER_PATH[] = "/wgpu-shaders/%s";
 size_t buffer_size;
 WGPUBuffer *staging_buffer, *output_buffer_storage, *input_buffer;
 nano_shader_t *shader;
+nano_shader_t *triangle_shader;
 WGPUComputePipeline compute_pipeline;
 WGPUBindGroup bind_group;
 
@@ -126,7 +127,7 @@ static void init(void) {
     // Todo: Implement shader hot-reloading via drag drop into cimgui window
     // Todo: Implement bind group creation for multiple buffers
     // Todo: Compute pass should run for all active shaders in the shader pool
-    uint32_t compute_shader_id = nano_create_shader(
+    uint32_t compute_shader_id = nano_create_shader_from_file(
         shader_path, buffer_size, (char *)compute_shader_name);
     if (compute_shader_id == NANO_FAIL) {
         printf("Failed to create shader\n");
@@ -138,7 +139,7 @@ static void init(void) {
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
              triangle_shader_name);
 
-    uint32_t triangle_shader_id = nano_create_shader(
+    uint32_t triangle_shader_id = nano_create_shader_from_file(
         shader_path, buffer_size, (char *)triangle_shader_name);
     if (triangle_shader_id == NANO_FAIL) {
         printf("Failed to create shader\n");
@@ -148,8 +149,11 @@ static void init(void) {
     // Get the shader from the shader pool
     shader = nano_get_shader(&nano_app.shader_pool, compute_shader_id);
 
+    triangle_shader = nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
+
     // Activate the compute shader
     nano_activate_shader(shader);
+    nano_activate_shader(triangle_shader);
 
     // // Get the input buffer from the shader
     // input_buffer = nano_get_buffer(shader, 0, 0);

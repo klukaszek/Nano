@@ -93,16 +93,16 @@ typedef struct {
 typedef struct {
     bool in_use;
     size_t size;
-    
+
     BindingType binding_type;
-    
+
     // Store the reference to whatever the binding is
     union {
         WGPUBuffer buffer;
         WGPUTexture texture;
         WGPUTextureView texture_view;
     } data;
-    
+
     // Store the information about the binding
     union {
         BufferInfo buffer_usage;
@@ -112,8 +112,9 @@ typedef struct {
     int group;
     int binding;
 
-    uint32_t shader_id;// Iterate over bindings and print the buffer number for each binding
-    
+    uint32_t shader_id; // Iterate over bindings and print the buffer number for
+                        // each binding
+
     char data_type[32];
     char name[MAX_IDENT_LENGTH];
 } BindingInfo;
@@ -143,10 +144,11 @@ typedef struct {
     uint32_t id;
     bool in_use;
     int binding_count;
+    uint32_t buffer_size;
 
     char *source;
-    const char *path;
-    const char *label;
+    char label[64];
+    char path[256];
 
     // Initialized to -1 to indicate that the group is not set
     // Any binding index that is -1 is not used

@@ -635,10 +635,6 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
 
     if (shader->source)
         free((void *)shader->source);
-    if (shader->label)
-        free((void *)shader->label);
-    if (shader->path)
-        free((void *)shader->path);
 
     // Release the pipelines if they exist
     if (shader->compute_pipeline)
@@ -701,6 +697,8 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
 
     ImGuiIO *io = igGetIO();
 
+    // Make sure to clear the font atlas so we do not leak memory each
+    // time we have to update the fonts for rendering.
     ImFontAtlas_Clear(io->Fonts);
 
     // Set the app state font info to whatever is passed in
@@ -1174,21 +1172,94 @@ ShaderIndices nano_precompute_entry_indices(const nano_shader_t *info) {
     return indices;
 }
 
+// validate a shader to ensure that it is ready to be used
+int nano_validate_shader(nano_shader_t *info) {
+    if (info == NULL) {
+        fprintf(stderr, "NANO: nano_reload_shader() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+    if (info->in_use) {
+        fprintf(stderr, "NANO: Shader %u is currently in use\n", info->id);
+        return NANO_FAIL;
+    }
+
+    LOG("NANO: Reloading shader %u\n", info->id);
+
+    // Parse the compute shader to get the workgroup size as well
+    // and group layout requirements. These are stored in the info
+    // struct.
+    int status = nano_parse_shader(info->source, info);
+    if (status != NANO_OK) {
+        fprintf(stderr, "NANO: Failed to parse compute shader: %s\n",
+                info->path);
+        return NANO_FAIL;
+    }
+
+    // Get the entry indices for the shader
+    info->entry_indices = nano_precompute_entry_indices(info);
+    int compute_index = info->entry_indices.compute;
+    int vertex_index = info->entry_indices.vertex;
+    int fragment_index = info->entry_indices.fragment;
+
+    // Log entry point information if it exists
+    if (compute_index != -1) {
+        nano_entry_t *entry = &info->entry_points[compute_index];
+        LOG("NANO: Compute shader %u entry point: %s\n", info->id,
+            entry->entry);
+        LOG("NANO: Compute shader %u workgroup size: (%d, %d, %d)\n", info->id,
+            entry->workgroup_size.x, entry->workgroup_size.y,
+            entry->workgroup_size.z);
+    }
+    if (vertex_index != -1) {
+        nano_entry_t *entry = &info->entry_points[vertex_index];
+        LOG("NANO: Vertex shader %u entry point: %s\n", info->id, entry->entry);
+    }
+    if (fragment_index != -1) {
+        nano_entry_t *entry = &info->entry_points[fragment_index];
+        LOG("NANO: Fragment shader %u entry point: %s\n", info->id,
+            entry->entry);
+    }
+
+    // Build the pipeline layout
+    status = nano_build_pipeline_layout(info, info->buffer_size);
+    if (status != NANO_OK) {
+        fprintf(stderr, "NANO: Failed to build pipeline layout for shader %d\n",
+                info->id);
+        return 0;
+    }
+
+    // Build the shader pipelines
+    status = nano_build_shader_pipelines(info);
+    if (status != NANO_OK) {
+        fprintf(stderr,
+                "NANO: Failed to build shader pipelines for shader %d\n",
+                info->id);
+        return 0;
+    }
+
+    // Once we reach this point, we can assume that the shader has been
+    // successfully reloaded to reflect the changes in the shader source code.
+    // If anything goes wrong, the shader will technically not be able to be
+    // used until the shader is successfully validated.
+
+    return NANO_OK;
+}
+
 // Create our nano_shader_t struct to hold the compute shader and
 // pipeline, return shader id on success, 0 on failure Label
 // optional. This only supports WGSL shaders for the time being.
 // I'll explore SPIRV at a later time
-uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
+uint32_t nano_create_shader(const char *shader_source, size_t buffer_size,
                             char *label) {
-    if (shader_path == NULL) {
+    if (shader_source == NULL) {
         fprintf(stderr, "NANO: nano_create_shader() -> "
-                        "Shader path is NULL\n");
+                        "Shader source is NULL\n");
         return 0;
     }
 
     // Get shader id hash for the compute shader by hashing the
     // shader path
-    uint32_t shader_id = nano_hash_shader(shader_path);
+    uint32_t shader_id = nano_hash_shader(shader_source);
 
     // Find a slot in the shader pool to store the shader
     int slot = nano_find_shader_slot(&nano_app.shader_pool, shader_id);
@@ -1197,13 +1268,6 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
                 "NANO: Shader pool is full. Could not insert "
                 "shader %d\n",
                 shader_id);
-        return NANO_FAIL;
-    }
-
-    // Read the shader code from the file
-    char *shader_source = nano_read_file(shader_path);
-    if (!shader_source) {
-        fprintf(stderr, "Could not read file %s\n", shader_path);
         return NANO_FAIL;
     }
 
@@ -1220,62 +1284,16 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
     // Initialize the shader info struct
     nano_shader_t info = {
         .id = shader_id,
-        .source = shader_source,
-        .path = shader_path,
-        .label = strdup(label),
+        .buffer_size = (uint32_t)buffer_size,
+        .source = strdup(shader_source),
     };
 
-    // Parse the compute shader to get the workgroup size as well
-    // and group layout requirements. These are stored in the info
-    // struct.
-    int status = nano_parse_shader(shader_source, &info);
+    strncpy((char *)&info.label, label, strlen(label) + 1);
+
+    int status = nano_validate_shader(&info);
     if (status != NANO_OK) {
-        fprintf(stderr, "NANO: Failed to parse compute shader: %s\n",
-                info.path);
+        fprintf(stderr, "NANO: Failed to validate shader %u\n", shader_id);
         return NANO_FAIL;
-    }
-
-    // Get the entry indices for the shader
-    info.entry_indices = nano_precompute_entry_indices(&info);
-    int compute_index = info.entry_indices.compute;
-    int vertex_index = info.entry_indices.vertex;
-    int fragment_index = info.entry_indices.fragment;
-
-    LOG("NANO: Parsed shader: %s\n", info.path);
-
-    // Log entry point information if it exists
-    if (compute_index != -1) {
-        nano_entry_t *entry = &info.entry_points[compute_index];
-        LOG("NANO: Compute shader %u entry point: %s\n", info.id, entry->entry);
-        LOG("NANO: Compute shader %u workgroup size: (%d, %d, %d)\n", info.id,
-            entry->workgroup_size.x, entry->workgroup_size.y,
-            entry->workgroup_size.z);
-    }
-    if (vertex_index != -1) {
-        nano_entry_t *entry = &info.entry_points[vertex_index];
-        LOG("NANO: Vertex shader %u entry point: %s\n", info.id, entry->entry);
-    }
-    if (fragment_index != -1) {
-        nano_entry_t *entry = &info.entry_points[fragment_index];
-        LOG("NANO: Fragment shader %u entry point: %s\n", info.id,
-            entry->entry);
-    }
-
-    // Build the pipeline layout
-    status = nano_build_pipeline_layout(&info, buffer_size);
-    if (status != NANO_OK) {
-        fprintf(stderr, "NANO: Failed to build pipeline layout for shader %d\n",
-                info.id);
-        return 0;
-    }
-
-    // Build the shader pipelines
-    status = nano_build_shader_pipelines(&info);
-    if (status != NANO_OK) {
-        fprintf(stderr,
-                "NANO: Failed to build shader pipelines for shader %d\n",
-                info.id);
-        return 0;
     }
 
     // Add the shader to the shader pool
@@ -1291,6 +1309,33 @@ uint32_t nano_create_shader(const char *shader_path, size_t buffer_size,
 
     // Update the shader labels for the ImGui combo boxes
     _nano_update_shader_labels();
+
+    return shader_id;
+}
+
+// Create a shader from a file path
+uint32_t nano_create_shader_from_file(const char *path, size_t buffer_size,
+                                      char *label) {
+    if (path == NULL) {
+        fprintf(stderr, "NANO: nano_create_shader_from_file() -> "
+                        "Shader path is NULL\n");
+        return 0;
+    }
+
+    // Read the shader source from the file
+    char *source = nano_read_file(path);
+    if (source == NULL) {
+        fprintf(stderr, "NANO: nano_create_shader_from_file() -> "
+                        "Could not read shader source\n");
+        return 0;
+    }
+
+    // Create the shader from the source
+    uint32_t shader_id = nano_create_shader(source, buffer_size, label);
+    nano_shader_t *shader = nano_get_shader(&nano_app.shader_pool, shader_id);
+
+    // Set the path of the shader
+    strncpy((char *)&shader->path, path, strlen(path) + 1);
 
     return shader_id;
 }
@@ -1361,6 +1406,16 @@ bool nano_is_shader_active(nano_shader_t *shader) {
 // Get the number of active shaders
 int nano_num_active_shaders(nano_shader_pool_t *table) {
     return table->active_shaders.top + 1;
+}
+
+// Return a string of shader pipeline type for ImGui
+const char *nano_get_shader_type_str(nano_shader_t *shader) {
+    return (shader->entry_indices.compute != -1 &&
+            shader->entry_indices.vertex != -1 &&
+            shader->entry_indices.fragment != -1)
+               ? "Compute & Render"
+           : (shader->entry_indices.compute != -1) ? "Compute"
+                                                   : "Render";
 }
 
 // Get the compute pipeline from the shader info struct if it exists
@@ -1462,8 +1517,11 @@ static void nano_demo_window(bool *show_debug) {
     bool visible = true;
     bool closed = false;
 
+    ImGuiStyle *style = igGetStyle();
+    style->ItemSpacing = (ImVec2){5, 10};
+
     // Set the window size
-    igSetNextWindowSize((ImVec2){400, 450}, ImGuiCond_FirstUseEver);
+    igSetNextWindowSize((ImVec2){800, 600}, ImGuiCond_FirstUseEver);
 
     // Set the window position
     igSetNextWindowPos((ImVec2){20, 20}, ImGuiCond_FirstUseEver,
@@ -1501,7 +1559,7 @@ static void nano_demo_window(bool *show_debug) {
             }
 
             if (igBeginMenu("View", true)) {
-                if (igMenuItem_BoolPtr("Show Demo", NULL, NULL, true)) {
+                if (igMenuItem_BoolPtr("Show ImGui Demo", NULL, NULL, true)) {
                     show_demo = !show_demo;
                 }
                 igEndMenu();
@@ -1514,7 +1572,7 @@ static void nano_demo_window(bool *show_debug) {
         // --------------------------
         if (igCollapsingHeader_BoolPtr("About Nano", NULL,
                                        ImGuiTreeNodeFlags_CollapsingHeader)) {
-            igSpacing();
+
             igTextWrapped("Nano is a simple solution for starting a "
                           "new WebGPU based"
                           " application. Nano is designed to use "
@@ -1526,26 +1584,29 @@ static void nano_demo_window(bool *show_debug) {
                           "currently being rebuilt "
                           "from the ground up so it is not ready for "
                           "anything yet.");
-            igSpacing();
             igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
         }
 
         // Nano Render Information
         // --------------------------
-        if (igCollapsingHeader_BoolPtr("Nano Render Information", NULL,
+        if (igCollapsingHeader_BoolPtr("Nano Graphics Information", NULL,
                                        ImGuiTreeNodeFlags_CollapsingHeader |
                                            ImGuiTreeNodeFlags_DefaultOpen)) {
-            igText("Nano Render Information");
+            igText("Nano Runtime Information");
             igSeparator();
-            igText("Frame Time: %.2f ms", nano_app.frametime);
-            igText("Frames Per Second: %.2f", nano_app.fps);
-            igText("Render Resolution: (%d, %d)", (int)nano_app.wgpu->width,
-                   (int)nano_app.wgpu->height);
+            igBulletText("Frame Time: %.2f ms", nano_app.frametime);
+            igBulletText("Frames Per Second: %.2f", nano_app.fps);
+            igBulletText("Render Resolution: (%d, %d)",
+                         (int)nano_app.wgpu->width, (int)nano_app.wgpu->height);
 
             igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
 
+            igText("Graphics Settings");
+
             // MSAA settings
             // --------------------------
+
+            igBullet();
 
             uint8_t *msaa_values = nano_app.settings.gfx.msaa.msaa_values;
             uint8_t msaa_value = nano_app.settings.gfx.msaa.sample_count;
@@ -1613,11 +1674,24 @@ static void nano_demo_window(bool *show_debug) {
         if (igCollapsingHeader_BoolPtr("Nano Shader Pool Information", NULL,
                                        ImGuiTreeNodeFlags_CollapsingHeader)) {
 
+            // Create a static label for the active shader combo
+            static char active_shader_label[64];
+            static uint32_t active_shader_id;
+            if (active_shader_label[0] == 0) {
+                active_shader_id =
+                    nano_get_active_shader_id(&nano_app.shader_pool, 0);
+                nano_shader_t *active_shader =
+                    nano_get_shader(&nano_app.shader_pool, active_shader_id);
+                snprintf(active_shader_label, 64, "%d: %s", 0,
+                         active_shader->label);
+            }
+
             // Basic shader pool information
             igText("Shader Pool Information");
-            igText("Shaders In Memory: %zu", nano_app.shader_pool.shader_count);
-            igText("Active Shaders: %d",
-                   nano_num_active_shaders(&nano_app.shader_pool));
+            igBulletText("Shaders In Memory: %zu",
+                         nano_app.shader_pool.shader_count);
+            igBulletText("Active Shaders: %d",
+                         nano_num_active_shaders(&nano_app.shader_pool));
 
             igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
 
@@ -1637,101 +1711,130 @@ static void nano_demo_window(bool *show_debug) {
                         igText("No active shaders found.");
                     } else {
                         igText("Active Shaders In Order Of Execution:");
-                        for (int i = 0;
-                             i < nano_app.shader_pool.active_shaders.top + 1;
-                             i++) {
-                            uint32_t shader_id =
-                                nano_app.shader_pool.active_shaders.data[i];
-                            nano_shader_t *shader = nano_get_shader(
-                                &nano_app.shader_pool, shader_id);
-                            igText("%d: %s - ID: %d", i, shader->label,
-                                   shader->id);
-                            // If the shader is active, we can deactivate it
-                            // Make sure button is right of the text.
-                            if (igButton("Deactivate", (ImVec2){200, 0})) {
-                                nano_deactivate_shader(shader);
+                        if (igBeginCombo("Select Active Shader",
+                                         active_shader_label,
+                                         ImGuiComboFlags_None)) {
+                            for (int i = 0;
+                                 i <
+                                 nano_app.shader_pool.active_shaders.top + 1;
+                                 i++) {
+                                uint32_t shader_id = nano_get_active_shader_id(
+                                    &nano_app.shader_pool, i);
+                                nano_shader_t *shader = nano_get_shader(
+                                    &nano_app.shader_pool, shader_id);
+                                char label[64];
+                                snprintf(label, 64, "%d: %s", i, shader->label);
+                                if (igSelectable_Bool(label, false,
+                                                      ImGuiSelectableFlags_None,
+                                                      (ImVec2){0, 0})) {
+                                    active_shader_id = shader_id;
+                                    snprintf(active_shader_label, 64, "%d: %s",
+                                             i, shader->label);
+                                }
                             }
+                            igEndCombo();
+                        }
+
+                        nano_shader_t *shader = nano_get_shader(
+                            &nano_app.shader_pool, active_shader_id);
+                        igBulletText("Shader ID: %u", shader->id);
+                        igBulletText("Shader Type: %s",
+                                     nano_get_shader_type_str(shader));
+
+                        if (igButton("Deactivate Shader", (ImVec2){200, 0})) {
+                            nano_deactivate_shader(nano_get_shader(
+                                &nano_app.shader_pool, active_shader_id));
+                            active_shader_id = nano_get_active_shader_id(
+                                &nano_app.shader_pool, 0);
+                            nano_shader_t *active_shader = nano_get_shader(
+                                &nano_app.shader_pool, active_shader_id);
+                            snprintf(active_shader_label, 64, "%d: %s", 0,
+                                     active_shader->label);
                         }
                     }
                 }
-
-                igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
 
                 // End of active shaders
                 // --------------------------
 
+                igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
+
                 // List all shaders in the shader pool
-                // This will allow us to activate, delete, or edit/inspect the
-                // shader
+                // This will allow us to activate, delete, or edit/inspect
+                // the shader
                 // --------------------------
+                if (igCollapsingHeader_BoolPtr(
+                        "Loaded Shaders", NULL,
+                        ImGuiTreeNodeFlags_CollapsingHeader)) {
 
-                static int shader_index = 0;
-                igCombo_Str("Select Shader", &shader_index,
-                            nano_app.shader_pool.shader_labels,
-                            nano_app.shader_pool.shader_count);
+                    igText("Shaders In Memory:");
 
-                int slot = _nano_find_shader_slot_with_index(shader_index);
-                if (slot < 0) {
-                    igText("Error: Shader not found");
-                } else {
+                    static int shader_index = 0;
+                    igCombo_Str("Select Shader", &shader_index,
+                                nano_app.shader_pool.shader_labels,
+                                nano_app.shader_pool.shader_count);
 
-                    nano_shader_t *shader =
-                        &nano_app.shader_pool.shaders[slot].shader_entry;
-
-                    char *source = shader->source;
-                    char *label = (char *)shader->label;
-
-                    // Calculate the size of the input text box based on
-                    // the visual text size of the shader source
-                    ImVec2 size = {200, 0};
-                    igCalcTextSize(&size, source, NULL, false, 0.0f);
-
-                    // Add some padding to the size
-                    size.x += 20;
-                    size.y += 20;
-
-                    // Display the shader source in a text box
-                    igInputTextMultiline(
-                        label, source, strlen(source) * 2, size,
-                        ImGuiInputTextFlags_AllowTabInput, NULL, NULL);
-
-                    igText("Shader ID: %d", shader->id);
-                    if (shader->entry_indices.compute != -1 &&
-                        shader->entry_indices.vertex != -1 &&
-                        shader->entry_indices.fragment != -1) {
-                        igText("Shader Types: Compute & Render");
+                    // Find the shader slot with the shader index
+                    int slot = _nano_find_shader_slot_with_index(shader_index);
+                    if (slot < 0) {
+                        igText("Error: Shader not found");
                     } else {
-                        if (shader->entry_indices.compute != -1) {
-                            igText("Shader Type: Compute");
-                        } else if (shader->entry_indices.vertex != -1 &&
-                                   shader->entry_indices.fragment != -1) {
-                            igText("Shader Type: Render");
-                        }
-                    }
+                        // When found, get he shader information and display it
+                        nano_shader_t *shader =
+                            &nano_app.shader_pool.shaders[slot].shader_entry;
 
-                    if (!shader->in_use) {
-                        if (igButton("Remove Shader", (ImVec2){200, 0})) {
-                            nano_release_shader(&nano_app.shader_pool,
-                                                shader_index);
+                        char *source = shader->source;
+                        char *label = (char *)shader->label;
+
+                        // Calculate the size of the input text box based on
+                        // the visual text size of the shader source
+                        ImVec2 size = {200, 0};
+                        igCalcTextSize(&size, source, NULL, false, 0.0f);
+
+                        // Add some padding to the size
+                        size.x += 20;
+                        size.y += 20;
+
+                        igText("Shader ID: %u", shader->id);
+                        igText("Shader Type: %s",
+                               nano_get_shader_type_str(shader));
+
+                        // Display the shader source in a text box
+                        igInputTextMultiline(label, source, strlen(source) * 2,
+                                             size, ImGuiInputTextFlags_ReadOnly,
+                                             NULL, NULL);
+
+                        // Allow shaders to be activated or removed
+                        if (!shader->in_use) {
+                            if (igButton("Activate Shader", (ImVec2){200, 0})) {
+                                nano_activate_shader(shader);
+                            }
+                            if (igButton("Remove Shader", (ImVec2){200, 0})) {
+                                nano_release_shader(&nano_app.shader_pool,
+                                                    shader_index);
+                            }
+                        } else {
+                            igText("Shader is currently in use.");
                         }
-                    } else {
-                        igText("Shader is currently in use.");
                     }
                 }
-
                 // End of individual shader information
                 // ------------------------------------
             }
-
-            igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
         }
+
+        igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
 
         // End of shader pool Information
         // ------------------------------
 
+        igText("Misc Settings:");
+
+        igBullet();
+
         // Set the clear color for the frame
         igSliderFloat4(
-            "RBGA Colour",
+            "RGBA Clear",
             (float *)&nano_app.wgpu->default_pipeline_info.clear_color, 0.0f,
             1.0f, "%.2f", 0);
 
