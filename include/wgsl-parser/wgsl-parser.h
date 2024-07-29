@@ -9,7 +9,7 @@
 #define MAX_IDENT_LENGTH 256
 #define MAX_ENTRIES 3 // Compute, Vertex, Fragment
 #define MAX_GROUPS 4
-#define MAX_BINDINGS 16
+#define MAX_BINDINGS 8
 
 // -----------------------------------------------
 
@@ -79,12 +79,6 @@ typedef enum {
 /* ------------------------------------------*/
 
 typedef struct {
-    uint8_t x;
-    uint8_t y;
-    uint8_t z;
-} WorkgroupSize;
-
-typedef struct {
     int8_t vertex;
     int8_t fragment;
     int8_t compute;
@@ -119,18 +113,17 @@ typedef struct {
     char name[MAX_IDENT_LENGTH];
 } BindingInfo;
 
-typedef struct PipelineLayout {
-    WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
-    size_t num_layouts;
-} PipelineLayout;
-
 // Each entry point can have a different pipeline
 typedef struct {
     char entry[MAX_IDENT_LENGTH];
     char label[64];
     bool in_use;
     ShaderType type;
-    WorkgroupSize workgroup_size;
+    struct WorkgroupSize {
+        uint8_t x;
+        uint8_t y;
+        uint8_t z;
+    } workgroup_size;
 } EntryPoint;
 
 // Each shader can have multiple entry points
@@ -142,7 +135,6 @@ typedef struct {
 typedef struct {
 
     uint32_t id;
-    bool in_use;
     int binding_count;
     uint32_t buffer_size;
 
@@ -160,11 +152,6 @@ typedef struct {
     EntryPoint entry_points[MAX_ENTRIES];
 
     ShaderIndices entry_indices;
-
-    PipelineLayout layout;
-
-    WGPUComputePipeline compute_pipeline;
-    WGPURenderPipeline render_pipeline;
 
 } ShaderInfo;
 

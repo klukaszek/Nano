@@ -83,37 +83,6 @@
 #define NANO_FAIL -1
 #define NANO_OK 0
 
-// Nano Pipeline Declarations
-// ---------------------------------------
-typedef PipelineLayout nano_pipeline_layout_t;
-
-// Nano Buffer Declarations
-// ---------------------------------------
-
-// Maximum size of the hash table for each of the buffer pools.
-#define NANO_GROUP_MAX_BINDINGS 8
-
-typedef BindingInfo nano_binding_info_t;
-typedef WGPUBufferDescriptor nano_buffer_desc_t;
-
-// Nano Entry Point Declarations
-// ----------------------------------------
-typedef EntryPoint nano_entry_t;
-
-// Nano Shader Declarations
-// ----------------------------------------
-
-// Maximum number of compute shaders that can be stored in the shader pool
-#define NANO_MAX_SHADERS 16
-
-typedef ShaderType nano_shader_type_t;
-typedef ShaderInfo nano_shader_t;
-
-typedef struct ShaderNode {
-    nano_shader_t shader_entry;
-    bool occupied;
-} ShaderNode;
-
 // Generic Array/Stack Implementation Based on old GGYL code
 // ----------------------------------------
 
@@ -195,6 +164,79 @@ typedef struct ShaderNode {
         }                                                                      \
         printf("\n");                                                          \
     }
+
+// Nano Binding & Buffer Declarations
+// ---------------------------------------
+
+// Maximum size of the hash table for each of the buffer pools.
+#define NANO_MAX_GROUPS 4
+#define NANO_GROUP_MAX_BINDINGS 8
+
+typedef BindingInfo nano_binding_info_t;
+typedef WGPUBufferDescriptor nano_buffer_desc_t;
+
+// Building the BindGroupDescriptor must be a manual process
+// since Nano can't inherently know what  is being passed
+// into the BindGroupEntries. When nano_shader_build_bindgroup(shader)
+// is called, Nano will check for
+typedef struct nano_buffer_data_t {
+    uint8_t group;
+    uint8_t binding;
+    size_t size;
+    uint32_t count;
+    void *data;
+} nano_buffer_data_t;
+
+// Nano Entry Point Declarations
+// ----------------------------------------
+typedef EntryPoint nano_entry_t;
+
+// Nano Pipeline Declarations
+// ---------------------------------------
+typedef struct nano_pipeline_layout_t {
+    WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
+    size_t num_layouts;
+} nano_pipeline_layout_t;
+
+// Nano Pass Action Declarations
+// ----------------------------------------
+typedef void (*nano_pass_func)(int count, ...);
+
+typedef struct nano_pass_t {
+    char label[64];
+    nano_pass_func func;
+} nano_pass_t;
+
+// Nano Shader Declarations
+// ----------------------------------------
+
+// Maximum number of compute shaders that can be stored in the shader pool
+#define NANO_MAX_SHADERS 16
+
+typedef ShaderType nano_shader_type_t;
+typedef ShaderInfo nano_shader_info_t;
+
+typedef struct nano_shader_t {
+
+    uint32_t id;
+    bool in_use;
+
+    nano_shader_type_t type;
+    nano_shader_info_t info;
+
+    nano_pipeline_layout_t layout;
+
+    nano_buffer_data_t buffer_data[NANO_MAX_GROUPS][NANO_GROUP_MAX_BINDINGS];
+
+    WGPUComputePipeline compute_pipeline;
+    WGPURenderPipeline render_pipeline;
+
+} nano_shader_t;
+
+typedef struct ShaderNode {
+    nano_shader_t shader_entry;
+    bool occupied;
+} ShaderNode;
 
 // Nano Shader Pool Declarations
 // ----------------------------------------
@@ -434,7 +476,14 @@ int nano_create_buffer(nano_binding_info_t *binding, size_t size) {
 }
 
 // Get a buffer from the shader info struct using the group and binding
-WGPUBuffer *nano_get_buffer(nano_shader_t *info, int group, int binding) {
+WGPUBuffer *nano_get_buffer(nano_shader_t *shader, uint8_t group,
+                            uint8_t binding) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_get_buffer() -> Shader info is NULL\n");
+        return NULL;
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr, "NANO: nano_get_buffer() -> Shader info is NULL\n");
         return NULL;
@@ -449,7 +498,6 @@ WGPUBuffer *nano_get_buffer(nano_shader_t *info, int group, int binding) {
 
     // Make sure the binding type is not NULL and is BUFFER
     nano_binding_info_t *binding_info = &info->bindings[index];
-
     if (binding_info == NULL) {
         fprintf(stderr, "NANO: nano_get_buffer() -> Binding info is NULL\n");
         return NULL;
@@ -466,7 +514,15 @@ WGPUBuffer *nano_get_buffer(nano_shader_t *info, int group, int binding) {
 }
 
 // Get the buffer size from the shader info struct using the group and binding
-size_t nano_get_buffer_size(nano_shader_t *info, int group, int binding) {
+size_t nano_get_buffer_size(nano_shader_t *shader, uint8_t group,
+                            uint8_t binding) {
+    if (shader == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_buffer_size() -> Shader info is NULL\n");
+        return 0;
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr,
                 "NANO: nano_get_buffer_size() -> Shader info is NULL\n");
@@ -488,8 +544,14 @@ size_t nano_get_buffer_size(nano_shader_t *info, int group, int binding) {
 // -------------------------------------------------
 
 // Retrieve a binding from the shader info struct regardless of binding type
-nano_binding_info_t nano_get_binding(nano_shader_t *info, int group,
+nano_binding_info_t nano_get_binding(nano_shader_t *shader, int group,
                                      int binding) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_get_binding() -> Shader info is NULL\n");
+        return (nano_binding_info_t){0};
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr, "NANO: nano_get_binding() -> Shader info is NULL\n");
         return (nano_binding_info_t){0};
@@ -507,8 +569,15 @@ nano_binding_info_t nano_get_binding(nano_shader_t *info, int group,
 // Retrieve a binding from the shader info struct by the name
 // This is useful when working with a shader that we already know the bindings
 // of.
-nano_binding_info_t nano_get_binding_by_name(nano_shader_t *info,
+nano_binding_info_t nano_get_binding_by_name(nano_shader_t *shader,
                                              const char *name) {
+    if (shader == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_binding_by_name() -> Shader info is NULL\n");
+        return (nano_binding_info_t){0};
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr,
                 "NANO: nano_get_binding_by_name() -> Shader info is NULL\n");
@@ -594,7 +663,7 @@ static int _nano_update_shader_labels() {
     for (int i = 0; i < NANO_MAX_SHADERS; i++) {
         if (nano_app.shader_pool.shaders[i].occupied) {
             char *label =
-                (char *)nano_app.shader_pool.shaders[i].shader_entry.label;
+                (char *)nano_app.shader_pool.shaders[i].shader_entry.info.label;
             strncat(labels, label, strlen(label) + 1);
             // Separate the labels with a ? as a placeholder for ImGui \0
             // terminators
@@ -633,8 +702,8 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
     // Make sure the node in the table knows it is no longer occupied
     table->shaders[index].occupied = false;
 
-    if (shader->source)
-        free((void *)shader->source);
+    if (shader->info.source)
+        free((void *)shader->info.source);
 
     // Release the pipelines if they exist
     if (shader->compute_pipeline)
@@ -650,8 +719,8 @@ void nano_release_shader(nano_shader_pool_t *table, uint32_t shader_id) {
     }
 
     // Release the buffer objects in the shader bindings
-    for (int i = 0; i < shader->binding_count; i++) {
-        nano_binding_info_t binding = shader->bindings[i];
+    for (int i = 0; i < shader->info.binding_count; i++) {
+        nano_binding_info_t binding = shader->info.bindings[i];
         if (binding.data.buffer)
             wgpuBufferRelease(binding.data.buffer);
     }
@@ -764,10 +833,10 @@ int nano_parse_shader(char *source, nano_shader_t *shader) {
     // This will populate the shader struct with the necessary information
     // This shader struct will ultimately be used to store the ComputePipeline
     // and PipelineLayout objects.
-    parse_shader(&parser, shader);
+    parse_shader(&parser, &shader->info);
 
     // Make sure the shader has at least one entry point
-    if (shader->entry_point_count == 0) {
+    if (shader->info.entry_point_count == 0) {
         fprintf(stderr, "NANO: nano_parse_shader() -> Shader parsing failed\n");
         return NANO_FAIL;
     }
@@ -777,7 +846,13 @@ int nano_parse_shader(char *source, nano_shader_t *shader) {
 
 // Build the bindings for the shader and populate the group_indices array
 // group_indices[group][binding] = index @ binding_info[]
-int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
+int nano_build_bindings(nano_shader_t *shader, size_t buffer_size) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_build_bindings() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr, "NANO: nano_build_bindings() -> Shader info is NULL\n");
         return NANO_FAIL;
@@ -856,8 +931,15 @@ int nano_build_bindings(nano_shader_t *info, size_t buffer_size) {
 
 // Get the binding information from the shader info struct as a
 // nano_binding_info_t
-nano_binding_info_t nano_get_shader_binding(nano_shader_t *info, int group,
+nano_binding_info_t nano_get_shader_binding(nano_shader_t *shader, int group,
                                             int binding) {
+    if (shader == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_shader_binding() -> Shader info is NULL\n");
+        return (nano_binding_info_t){0};
+    }
+
+    nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         fprintf(stderr,
                 "NANO: nano_get_shader_binding() -> Shader info is NULL\n");
@@ -875,7 +957,16 @@ nano_binding_info_t nano_get_shader_binding(nano_shader_t *info, int group,
 }
 
 // Build a pipeline layout for the shader using the bindings in the shader
-int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
+int nano_build_pipeline_layout(nano_shader_t *shader, size_t buffer_size) {
+
+    if (shader == NULL) {
+        fprintf(stderr,
+                "Nano: nano_build_pipeline_layout() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    nano_shader_info_t *info = &shader->info;
+
     if (info == NULL) {
         fprintf(stderr,
                 "Nano: nano_build_pipeline_layout() -> Compute info is NULL\n");
@@ -910,7 +1001,7 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
     // group layout entry. This will be used to create the bind group
     // layout descriptor. From here we can create the pipeline layout
     // descriptor and the compute pipeline descriptor.
-    int status = nano_build_bindings(info, buffer_size);
+    int status = nano_build_bindings(shader, buffer_size);
     if (status != NANO_OK) {
         fprintf(stderr, "NANO: Shader %u: Could not build bindings\n",
                 info->id);
@@ -1004,10 +1095,10 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
     } // Top level (i) for-loop
 
     // Assign the number of layouts to the output layout
-    info->layout.num_layouts = num_groups;
+    shader->layout.num_layouts = num_groups;
 
     // Copy the bind group layouts to the output layout
-    memcpy(info->layout.bg_layouts, &bg_layouts, sizeof(bg_layouts));
+    memcpy(shader->layout.bg_layouts, &bg_layouts, sizeof(bg_layouts));
 
     return NANO_OK;
 }
@@ -1016,7 +1107,14 @@ int nano_build_pipeline_layout(nano_shader_t *info, size_t buffer_size) {
 // If the shader has multiple entry points, we can build multiple pipelines
 // The renderpipeline depends on the vertex and fragment entry points
 // The computepipeline depends on the compute entry point
-int nano_build_shader_pipelines(nano_shader_t *info) {
+int nano_build_shader_pipelines(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr,
+                "NANO: nano_build_shader_pipelines() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    nano_shader_info_t *info = &shader->info;
 
     int retval = NANO_OK;
     int compute_index = info->entry_indices.compute;
@@ -1025,8 +1123,8 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
 
     // Create the pipeline layout descriptor
     WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
-        .bindGroupLayoutCount = info->layout.num_layouts,
-        .bindGroupLayouts = info->layout.bg_layouts,
+        .bindGroupLayoutCount = shader->layout.num_layouts,
+        .bindGroupLayouts = shader->layout.bg_layouts,
     };
 
     // Create the pipeline layout object for the wgpu pipeline descriptor
@@ -1067,7 +1165,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
         };
 
         // Set the WGPU pipeline object in our shader info struct
-        info->compute_pipeline = wgpuDeviceCreateComputePipeline(
+        shader->compute_pipeline = wgpuDeviceCreateComputePipeline(
             nano_app.wgpu->device, &pipeline_desc);
     }
 
@@ -1076,8 +1174,8 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
     if (vertex_index != -1 && fragment_index != -1) {
 
         WGPURenderPipelineDescriptor renderPipelineDesc = {
-            .layout = pipeline_layout_obj,
             .label = (const char *)info->label,
+            .layout = pipeline_layout_obj,
             .vertex =
                 {
                     .module = shader_module,
@@ -1107,15 +1205,15 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
                                 &(WGPUBlendState){
                                     .color =
                                         (WGPUBlendComponent){
+                                            .operation = WGPUBlendOperation_Add,
                                             .srcFactor = WGPUBlendFactor_One,
                                             .dstFactor = WGPUBlendFactor_One,
-                                            .operation = WGPUBlendOperation_Add,
                                         },
                                     .alpha =
                                         (WGPUBlendComponent){
+                                            .operation = WGPUBlendOperation_Add,
                                             .srcFactor = WGPUBlendFactor_One,
                                             .dstFactor = WGPUBlendFactor_One,
-                                            .operation = WGPUBlendOperation_Add,
                                         },
                                 },
                             .writeMask = WGPUColorWriteMask_All,
@@ -1125,7 +1223,7 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
         };
 
         // Assign the render pipeline to the shader info struct
-        info->render_pipeline = wgpuDeviceCreateRenderPipeline(
+        shader->render_pipeline = wgpuDeviceCreateRenderPipeline(
             nano_app.wgpu->device, &renderPipelineDesc);
 
         // If the vertex or fragment entry indices are valid, but the other is
@@ -1146,7 +1244,20 @@ int nano_build_shader_pipelines(nano_shader_t *info) {
 }
 
 // Find the indices of the entry points in the shader info struct
-ShaderIndices nano_precompute_entry_indices(const nano_shader_t *info) {
+ShaderIndices nano_precompute_entry_indices(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr,
+                "NANO: nano_precompute_entry_indices() -> Shader is NULL\n");
+        return (ShaderIndices){-1, -1, -1};
+    }
+
+    nano_shader_info_t *info = &shader->info;
+    if (info == NULL) {
+        fprintf(stderr,
+                "NANO: nano_precompute_entry_indices() -> Shader info is "
+                "NULL\n");
+        return (ShaderIndices){-1, -1, -1};
+    }
 
     // -1 means no entry point found
     ShaderIndices indices = {-1, -1, -1};
@@ -1172,14 +1283,23 @@ ShaderIndices nano_precompute_entry_indices(const nano_shader_t *info) {
     return indices;
 }
 
+// Shader Functions
+// -------------------------------------------------
+
 // validate a shader to ensure that it is ready to be used
-int nano_validate_shader(nano_shader_t *info) {
-    if (info == NULL) {
-        fprintf(stderr, "NANO: nano_reload_shader() -> Shader is NULL\n");
+int nano_validate_shader(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_validate_shader() -> Shader is NULL\n");
         return NANO_FAIL;
     }
-    if (info->in_use) {
-        fprintf(stderr, "NANO: Shader %u is currently in use\n", info->id);
+    if (shader->in_use) {
+        fprintf(stderr, "NANO: Shader %u is currently in use\n", shader->id);
+        return NANO_FAIL;
+    }
+
+    nano_shader_info_t *info = &shader->info;
+    if (info == NULL) {
+        fprintf(stderr, "NANO: nano_reload_shader() -> Shader is NULL\n");
         return NANO_FAIL;
     }
 
@@ -1188,7 +1308,7 @@ int nano_validate_shader(nano_shader_t *info) {
     // Parse the compute shader to get the workgroup size as well
     // and group layout requirements. These are stored in the info
     // struct.
-    int status = nano_parse_shader(info->source, info);
+    int status = nano_parse_shader(info->source, shader);
     if (status != NANO_OK) {
         fprintf(stderr, "NANO: Failed to parse compute shader: %s\n",
                 info->path);
@@ -1196,7 +1316,7 @@ int nano_validate_shader(nano_shader_t *info) {
     }
 
     // Get the entry indices for the shader
-    info->entry_indices = nano_precompute_entry_indices(info);
+    info->entry_indices = nano_precompute_entry_indices(shader);
     int compute_index = info->entry_indices.compute;
     int vertex_index = info->entry_indices.vertex;
     int fragment_index = info->entry_indices.fragment;
@@ -1220,22 +1340,27 @@ int nano_validate_shader(nano_shader_t *info) {
             entry->entry);
     }
 
-    // Build the pipeline layout
-    status = nano_build_pipeline_layout(info, info->buffer_size);
-    if (status != NANO_OK) {
-        fprintf(stderr, "NANO: Failed to build pipeline layout for shader %d\n",
-                info->id);
-        return 0;
-    }
+    // Use a nano_buffer_data_t struct to store metadata about each buffer
+    // We once the developer has added the buffer information to the shader
+    // struct, we can call a method to build the pipeline layout,
 
-    // Build the shader pipelines
-    status = nano_build_shader_pipelines(info);
-    if (status != NANO_OK) {
-        fprintf(stderr,
-                "NANO: Failed to build shader pipelines for shader %d\n",
-                info->id);
-        return 0;
-    }
+    // // Build the pipeline layout
+    // status = nano_build_pipeline_layout(info, info->buffer_size);
+    // if (status != NANO_OK) {
+    //     fprintf(stderr, "NANO: Failed to build pipeline layout for shader
+    //     %d\n",
+    //             info->id);
+    //     return 0;
+    // }
+    //
+    // // Build the shader pipelines
+    // status = nano_build_shader_pipelines(info);
+    // if (status != NANO_OK) {
+    //     fprintf(stderr,
+    //             "NANO: Failed to build shader pipelines for shader %d\n",
+    //             info->id);
+    //     return 0;
+    // }
 
     // Once we reach this point, we can assume that the shader has been
     // successfully reloaded to reflect the changes in the shader source code.
@@ -1249,8 +1374,7 @@ int nano_validate_shader(nano_shader_t *info) {
 // pipeline, return shader id on success, 0 on failure Label
 // optional. This only supports WGSL shaders for the time being.
 // I'll explore SPIRV at a later time
-uint32_t nano_create_shader(const char *shader_source, size_t buffer_size,
-                            char *label) {
+uint32_t nano_create_shader(const char *shader_source, char *label) {
     if (shader_source == NULL) {
         fprintf(stderr, "NANO: nano_create_shader() -> "
                         "Shader source is NULL\n");
@@ -1282,22 +1406,26 @@ uint32_t nano_create_shader(const char *shader_source, size_t buffer_size,
     }
 
     // Initialize the shader info struct
-    nano_shader_t info = {
+    nano_shader_info_t info = {
         .id = shader_id,
-        .buffer_size = (uint32_t)buffer_size,
         .source = strdup(shader_source),
     };
 
     strncpy((char *)&info.label, label, strlen(label) + 1);
 
-    int status = nano_validate_shader(&info);
+    nano_shader_t shader = (nano_shader_t){
+        .id = shader_id,
+        .info = info,
+    };
+
+    int status = nano_validate_shader(&shader);
     if (status != NANO_OK) {
         fprintf(stderr, "NANO: Failed to validate shader %u\n", shader_id);
         return NANO_FAIL;
     }
 
     // Add the shader to the shader pool
-    memcpy(&nano_app.shader_pool.shaders[slot].shader_entry, &info,
+    memcpy(&nano_app.shader_pool.shaders[slot].shader_entry, &shader,
            sizeof(nano_shader_t));
     // Set the slot as occupied
     nano_app.shader_pool.shaders[slot].occupied = true;
@@ -1314,8 +1442,7 @@ uint32_t nano_create_shader(const char *shader_source, size_t buffer_size,
 }
 
 // Create a shader from a file path
-uint32_t nano_create_shader_from_file(const char *path, size_t buffer_size,
-                                      char *label) {
+uint32_t nano_create_shader_from_file(const char *path, char *label) {
     if (path == NULL) {
         fprintf(stderr, "NANO: nano_create_shader_from_file() -> "
                         "Shader path is NULL\n");
@@ -1331,16 +1458,18 @@ uint32_t nano_create_shader_from_file(const char *path, size_t buffer_size,
     }
 
     // Create the shader from the source
-    uint32_t shader_id = nano_create_shader(source, buffer_size, label);
+    uint32_t shader_id = nano_create_shader(source, label);
     nano_shader_t *shader = nano_get_shader(&nano_app.shader_pool, shader_id);
 
     // Set the path of the shader
-    strncpy((char *)&shader->path, path, strlen(path) + 1);
+    strncpy((char *)&shader->info.path, path, strlen(path) + 1);
 
     return shader_id;
 }
 
 // Set a shader to the active state.
+// Build bindings, pipeline layout, and pipeline
+// Build bindgroup
 int nano_activate_shader(nano_shader_t *shader) {
 
     if (shader == NULL) {
@@ -1348,10 +1477,38 @@ int nano_activate_shader(nano_shader_t *shader) {
         return NANO_FAIL;
     }
 
-    // If the shader is already ctive, return early
+    // If the shader is already active, return early
     if (shader->in_use) {
         return NANO_OK;
     }
+
+    // Use a nano_buffer_data_t struct to store metadata about each buffer
+    // Once the developer has added the buffer information to the shader
+    // struct, we can call this method to make sure the shader is ready to be
+    // executed.
+    //
+    // The shader should also have a pass function that will be called when Nano
+    // is ready to execute the shader. This pass function will be called with
+    // the
+    //
+
+    // // Build the pipeline layout
+    // status = nano_build_pipeline_layout(info, info->buffer_size);
+    // if (status != NANO_OK) {
+    //     fprintf(stderr, "NANO: Failed to build pipeline layout for shader
+    //     %d\n",
+    //             info->id);
+    //     return 0;
+    // }
+    //
+    // // Build the shader pipelines
+    // status = nano_build_shader_pipelines(info);
+    // if (status != NANO_OK) {
+    //     fprintf(stderr,
+    //             "NANO: Failed to build shader pipelines for shader %d\n",
+    //             info->id);
+    //     return 0;
+    // }
 
     // If the shader is not active, we can activate it
     shader->in_use = true;
@@ -1410,12 +1567,22 @@ int nano_num_active_shaders(nano_shader_pool_t *table) {
 
 // Return a string of shader pipeline type for ImGui
 const char *nano_get_shader_type_str(nano_shader_t *shader) {
-    return (shader->entry_indices.compute != -1 &&
-            shader->entry_indices.vertex != -1 &&
-            shader->entry_indices.fragment != -1)
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_get_shader_type_str() -> Shader is NULL\n");
+        return "Unknown";
+    }
+    nano_shader_info_t *info = &shader->info;
+    if (info == NULL) {
+        fprintf(stderr,
+                "NANO: nano_get_shader_type_str() -> Shader info is NULL\n");
+        return "Unknown";
+    }
+    return (info->entry_indices.compute != -1 &&
+            info->entry_indices.vertex != -1 &&
+            info->entry_indices.fragment != -1)
                ? "Compute & Render"
-           : (shader->entry_indices.compute != -1) ? "Compute"
-                                                   : "Render";
+           : (info->entry_indices.compute != -1) ? "Compute"
+                                                 : "Render";
 }
 
 // Get the compute pipeline from the shader info struct if it exists
@@ -1683,7 +1850,7 @@ static void nano_demo_window(bool *show_debug) {
                 nano_shader_t *active_shader =
                     nano_get_shader(&nano_app.shader_pool, active_shader_id);
                 snprintf(active_shader_label, 64, "%d: %s", 0,
-                         active_shader->label);
+                         active_shader->info.label);
             }
 
             // Basic shader pool information
@@ -1723,13 +1890,13 @@ static void nano_demo_window(bool *show_debug) {
                                 nano_shader_t *shader = nano_get_shader(
                                     &nano_app.shader_pool, shader_id);
                                 char label[64];
-                                snprintf(label, 64, "%d: %s", i, shader->label);
+                                snprintf(label, 64, "%d: %s", i, shader->info.label);
                                 if (igSelectable_Bool(label, false,
                                                       ImGuiSelectableFlags_None,
                                                       (ImVec2){0, 0})) {
                                     active_shader_id = shader_id;
                                     snprintf(active_shader_label, 64, "%d: %s",
-                                             i, shader->label);
+                                             i, shader->info.label);
                                 }
                             }
                             igEndCombo();
@@ -1749,7 +1916,7 @@ static void nano_demo_window(bool *show_debug) {
                             nano_shader_t *active_shader = nano_get_shader(
                                 &nano_app.shader_pool, active_shader_id);
                             snprintf(active_shader_label, 64, "%d: %s", 0,
-                                     active_shader->label);
+                                     active_shader->info.label);
                         }
                     }
                 }
@@ -1783,8 +1950,8 @@ static void nano_demo_window(bool *show_debug) {
                         nano_shader_t *shader =
                             &nano_app.shader_pool.shaders[slot].shader_entry;
 
-                        char *source = shader->source;
-                        char *label = (char *)shader->label;
+                        char *source = shader->info.source;
+                        char *label = (char *)shader->info.label;
 
                         // Calculate the size of the input text box based on
                         // the visual text size of the shader source

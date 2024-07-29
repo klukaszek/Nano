@@ -16,7 +16,7 @@ var Module = typeof Module != 'undefined' ? Module : {};
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpr0dqyh3a.js
+// include: /tmp/tmp40f33mhn.js
 
   if (!Module.expectedDataFileDownloads) {
     Module.expectedDataFileDownloads = 0;
@@ -195,21 +195,21 @@ Module['FS_createPath']("/", "wgpu-shaders", true, true);
 
   })();
 
-// end include: /tmp/tmpr0dqyh3a.js
-// include: /tmp/tmpktw7mfl4.js
+// end include: /tmp/tmp40f33mhn.js
+// include: /tmp/tmpl6nr50c3.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if (Module['ENVIRONMENT_IS_PTHREAD'] || Module['$ww']) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpktw7mfl4.js
-// include: /tmp/tmpiewsmvlm.js
+  // end include: /tmp/tmpl6nr50c3.js
+// include: /tmp/tmprqfynsbd.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach(function(task) {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmpiewsmvlm.js
+  // end include: /tmp/tmprqfynsbd.js
 
 
 // Sometimes an existing Module object exists with properties
@@ -5900,24 +5900,6 @@ function dbg(...args) {
     };
 
   
-  var _wgpuDeviceCreateComputePipeline = (deviceId, descriptor) => {
-      assert(descriptor);assert(HEAPU32[((descriptor)>>2)] === 0);
-  
-      var desc = {
-        "label": undefined,
-        "layout": WebGPU.makePipelineLayout(
-          HEAPU32[(((descriptor)+(8))>>2)]),
-        "compute": WebGPU.makeProgrammableStageDescriptor(
-          descriptor + 12),
-      };
-      var labelPtr = HEAPU32[(((descriptor)+(4))>>2)];
-      if (labelPtr) desc["label"] = UTF8ToString(labelPtr);
-  
-      var device = WebGPU.mgrDevice.get(deviceId);
-      return WebGPU.mgrComputePipeline.create(device.createComputePipeline(desc));
-    };
-
-  
   var _wgpuDeviceCreatePipelineLayout = (deviceId, descriptor) => {
       assert(descriptor);assert(HEAPU32[((descriptor)>>2)] === 0);
       var bglCount = HEAPU32[(((descriptor)+(8))>>2)];
@@ -6683,8 +6665,6 @@ var wasmImports = {
   wgpuDeviceCreateBuffer: _wgpuDeviceCreateBuffer,
   /** @export */
   wgpuDeviceCreateCommandEncoder: _wgpuDeviceCreateCommandEncoder,
-  /** @export */
-  wgpuDeviceCreateComputePipeline: _wgpuDeviceCreateComputePipeline,
   /** @export */
   wgpuDeviceCreatePipelineLayout: _wgpuDeviceCreatePipelineLayout,
   /** @export */
