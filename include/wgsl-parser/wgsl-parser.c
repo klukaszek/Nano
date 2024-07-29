@@ -261,7 +261,7 @@ void print_shader_info(ShaderInfo *info) {
     printf("Bindings:\n");
     for (int i = 0; i < info->binding_count; i++) {
         BindingInfo *bi = &info->bindings[i];
-        printf("  @group(%d) @binding(%d) var<", bi->group, bi->binding);
+        printf("  @group(%d) @binding(%d) var", bi->group, bi->binding);
 
         switch (bi->binding_type) {
             case BUFFER:
@@ -327,7 +327,7 @@ void print_shader_info(ShaderInfo *info) {
             printf("Texture\n");
         }
 
-        printf("\nEntry Points:\n");
+        printf("\nEntry Points: %d\n", info->entry_point_count);
         for (int i = 0; i < info->entry_point_count; i++) {
             EntryPoint *ep = &info->entry_points[i];
             printf("  ");

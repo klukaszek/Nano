@@ -106,9 +106,7 @@ typedef struct {
     int group;
     int binding;
 
-    uint32_t shader_id; // Iterate over bindings and print the buffer number for
-                        // each binding
-
+    uint32_t shader_id;
     char data_type[32];
     char name[MAX_IDENT_LENGTH];
 } BindingInfo;

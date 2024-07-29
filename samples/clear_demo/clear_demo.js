@@ -16,7 +16,7 @@ var Module = typeof Module != 'undefined' ? Module : {};
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmp40f33mhn.js
+// include: /tmp/tmp8db6wv1p.js
 
   if (!Module.expectedDataFileDownloads) {
     Module.expectedDataFileDownloads = 0;
@@ -195,21 +195,21 @@ Module['FS_createPath']("/", "wgpu-shaders", true, true);
 
   })();
 
-// end include: /tmp/tmp40f33mhn.js
-// include: /tmp/tmpl6nr50c3.js
+// end include: /tmp/tmp8db6wv1p.js
+// include: /tmp/tmpyo034qco.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if (Module['ENVIRONMENT_IS_PTHREAD'] || Module['$ww']) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpl6nr50c3.js
-// include: /tmp/tmprqfynsbd.js
+  // end include: /tmp/tmpyo034qco.js
+// include: /tmp/tmpeum3oldx.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach(function(task) {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmprqfynsbd.js
+  // end include: /tmp/tmpeum3oldx.js
 
 
 // Sometimes an existing Module object exists with properties
@@ -5564,9 +5564,109 @@ function dbg(...args) {
       WebGPU.mgrBuffer.get(bufferId).destroy();
     };
 
+  
+  
+  
+  var _wgpuBufferGetConstMappedRange = (bufferId, offset, size) => {
+      var bufferWrapper = WebGPU.mgrBuffer.objects[bufferId];
+      assert(typeof bufferWrapper != "undefined");
+  
+      if (size === 0) warnOnce('getMappedRange size=0 no longer means WGPU_WHOLE_MAP_SIZE');
+  
+      if (size == -1) size = undefined;
+  
+      var mapped;
+      try {
+        mapped = bufferWrapper.object.getMappedRange(offset, size);
+      } catch (ex) {
+        err(`wgpuBufferGetConstMappedRange(${offset}, ${size}) failed: ${ex}`);
+        // TODO(kainino0x): Somehow inject a validation error?
+        return 0;
+      }
+      var data = _memalign(16, mapped.byteLength);
+      HEAPU8.set(new Uint8Array(mapped), data);
+      bufferWrapper.onUnmap.push(() => _free(data));
+      return data;
+    };
+
+  
+  
+  var _wgpuBufferMapAsync = (bufferId, mode, offset, size, callback, userdata) => {
+      var bufferWrapper = WebGPU.mgrBuffer.objects[bufferId];
+      assert(typeof bufferWrapper != "undefined");
+      bufferWrapper.mapMode = mode;
+      bufferWrapper.onUnmap = [];
+      var buffer = bufferWrapper.object;
+  
+      if (size == -1) size = undefined;
+  
+      // `callback` takes (WGPUBufferMapAsyncStatus status, void * userdata)
+  
+      
+      buffer.mapAsync(mode, offset, size).then(() => {
+        
+        callUserCallback(() => {
+          getWasmTableEntry(callback)(0, userdata);
+        });
+      }, () => {
+        
+        callUserCallback(() => {
+          // TODO(kainino0x): Figure out how to pick other error status values.
+          getWasmTableEntry(callback)(1, userdata);
+        });
+      });
+    };
+
   var _wgpuBufferRelease = (id) => WebGPU.mgrBuffer.release(id);
 
+  var _wgpuBufferUnmap = (bufferId) => {
+      var bufferWrapper = WebGPU.mgrBuffer.objects[bufferId];
+      assert(typeof bufferWrapper != "undefined");
+  
+      if (!bufferWrapper.onUnmap) {
+        // Already unmapped
+        return;
+      }
+  
+      for (var i = 0; i < bufferWrapper.onUnmap.length; ++i) {
+        bufferWrapper.onUnmap[i]();
+      }
+      bufferWrapper.onUnmap = undefined;
+  
+      bufferWrapper.object.unmap();
+    };
+
   var _wgpuCommandBufferRelease = (id) => WebGPU.mgrCommandBuffer.release(id);
+
+  
+  var _wgpuCommandEncoderBeginComputePass = (encoderId, descriptor) => {
+      var desc;
+  
+      function makeComputePassTimestampWrites(twPtr) {
+        if (twPtr === 0) return undefined;
+  
+        return {
+          "querySet": WebGPU.mgrQuerySet.get(
+            HEAPU32[((twPtr)>>2)]),
+          "beginningOfPassWriteIndex": HEAPU32[(((twPtr)+(4))>>2)],
+          "endOfPassWriteIndex": HEAPU32[(((twPtr)+(8))>>2)],
+        };
+      }
+  
+      if (descriptor) {
+        assert(descriptor);assert(HEAPU32[((descriptor)>>2)] === 0);
+        desc = {
+          "label": undefined,
+          "timestampWrites": makeComputePassTimestampWrites(
+            HEAPU32[(((descriptor)+(8))>>2)]),
+        };
+        var labelPtr = HEAPU32[(((descriptor)+(4))>>2)];
+        if (labelPtr) desc["label"] = UTF8ToString(labelPtr);
+  
+      }
+      var commandEncoder = WebGPU.mgrCommandEncoder.get(encoderId);
+      return WebGPU.mgrComputePassEncoder.create(commandEncoder.beginComputePass(desc));
+    };
 
   
   var _wgpuCommandEncoderBeginRenderPass = (encoderId, descriptor) => {
@@ -5680,6 +5780,20 @@ function dbg(...args) {
       return WebGPU.mgrRenderPassEncoder.create(commandEncoder.beginRenderPass(desc));
     };
 
+  
+  function _wgpuCommandEncoderCopyBufferToBuffer(encoderId,srcId,srcOffset_low, srcOffset_high,dstId,dstOffset_low, dstOffset_high,size_low, size_high) {
+    var srcOffset = convertI32PairToI53Checked(srcOffset_low, srcOffset_high);
+    var dstOffset = convertI32PairToI53Checked(dstOffset_low, dstOffset_high);
+    var size = convertI32PairToI53Checked(size_low, size_high);
+  
+    
+      var commandEncoder = WebGPU.mgrCommandEncoder.get(encoderId);
+      var src = WebGPU.mgrBuffer.get(srcId);
+      var dst = WebGPU.mgrBuffer.get(dstId);
+      commandEncoder.copyBufferToBuffer(src, srcOffset, dst, dstOffset, size);
+    ;
+  }
+
   var _wgpuCommandEncoderFinish = (encoderId, descriptor) => {
       // TODO: Use the descriptor.
       var commandEncoder = WebGPU.mgrCommandEncoder.get(encoderId);
@@ -5687,6 +5801,36 @@ function dbg(...args) {
     };
 
   var _wgpuCommandEncoderRelease = (id) => WebGPU.mgrCommandEncoder.release(id);
+
+  var _wgpuComputePassEncoderDispatchWorkgroups = (passId, x, y, z) => {
+      var pass = WebGPU.mgrComputePassEncoder.get(passId);
+      pass.dispatchWorkgroups(x, y, z);
+    };
+
+  var _wgpuComputePassEncoderEnd = (passId) => {
+      var pass = WebGPU.mgrComputePassEncoder.get(passId);
+      pass.end();
+    };
+
+  var _wgpuComputePassEncoderSetBindGroup = (passId, groupIndex, groupId, dynamicOffsetCount, dynamicOffsetsPtr) => {
+      var pass = WebGPU.mgrComputePassEncoder.get(passId);
+      var group = WebGPU.mgrBindGroup.get(groupId);
+      if (dynamicOffsetCount == 0) {
+        pass.setBindGroup(groupIndex, group);
+      } else {
+        var offsets = [];
+        for (var i = 0; i < dynamicOffsetCount; i++, dynamicOffsetsPtr += 4) {
+          offsets.push(HEAPU32[((dynamicOffsetsPtr)>>2)]);
+        }
+        pass.setBindGroup(groupIndex, group, offsets);
+      }
+    };
+
+  var _wgpuComputePassEncoderSetPipeline = (passId, pipelineId) => {
+      var pass = WebGPU.mgrComputePassEncoder.get(passId);
+      var pipeline = WebGPU.mgrComputePipeline.get(pipelineId);
+      pass.setPipeline(pipeline);
+    };
 
   var _wgpuComputePipelineRelease = (id) => WebGPU.mgrComputePipeline.release(id);
 
@@ -5897,6 +6041,24 @@ function dbg(...args) {
       }
       var device = WebGPU.mgrDevice.get(deviceId);
       return WebGPU.mgrCommandEncoder.create(device.createCommandEncoder(desc));
+    };
+
+  
+  var _wgpuDeviceCreateComputePipeline = (deviceId, descriptor) => {
+      assert(descriptor);assert(HEAPU32[((descriptor)>>2)] === 0);
+  
+      var desc = {
+        "label": undefined,
+        "layout": WebGPU.makePipelineLayout(
+          HEAPU32[(((descriptor)+(8))>>2)]),
+        "compute": WebGPU.makeProgrammableStageDescriptor(
+          descriptor + 12),
+      };
+      var labelPtr = HEAPU32[(((descriptor)+(4))>>2)];
+      if (labelPtr) desc["label"] = UTF8ToString(labelPtr);
+  
+      var device = WebGPU.mgrDevice.get(deviceId);
+      return WebGPU.mgrComputePipeline.create(device.createComputePipeline(desc));
     };
 
   
@@ -6646,15 +6808,33 @@ var wasmImports = {
   /** @export */
   wgpuBufferDestroy: _wgpuBufferDestroy,
   /** @export */
+  wgpuBufferGetConstMappedRange: _wgpuBufferGetConstMappedRange,
+  /** @export */
+  wgpuBufferMapAsync: _wgpuBufferMapAsync,
+  /** @export */
   wgpuBufferRelease: _wgpuBufferRelease,
+  /** @export */
+  wgpuBufferUnmap: _wgpuBufferUnmap,
   /** @export */
   wgpuCommandBufferRelease: _wgpuCommandBufferRelease,
   /** @export */
+  wgpuCommandEncoderBeginComputePass: _wgpuCommandEncoderBeginComputePass,
+  /** @export */
   wgpuCommandEncoderBeginRenderPass: _wgpuCommandEncoderBeginRenderPass,
+  /** @export */
+  wgpuCommandEncoderCopyBufferToBuffer: _wgpuCommandEncoderCopyBufferToBuffer,
   /** @export */
   wgpuCommandEncoderFinish: _wgpuCommandEncoderFinish,
   /** @export */
   wgpuCommandEncoderRelease: _wgpuCommandEncoderRelease,
+  /** @export */
+  wgpuComputePassEncoderDispatchWorkgroups: _wgpuComputePassEncoderDispatchWorkgroups,
+  /** @export */
+  wgpuComputePassEncoderEnd: _wgpuComputePassEncoderEnd,
+  /** @export */
+  wgpuComputePassEncoderSetBindGroup: _wgpuComputePassEncoderSetBindGroup,
+  /** @export */
+  wgpuComputePassEncoderSetPipeline: _wgpuComputePassEncoderSetPipeline,
   /** @export */
   wgpuComputePipelineRelease: _wgpuComputePipelineRelease,
   /** @export */
@@ -6665,6 +6845,8 @@ var wasmImports = {
   wgpuDeviceCreateBuffer: _wgpuDeviceCreateBuffer,
   /** @export */
   wgpuDeviceCreateCommandEncoder: _wgpuDeviceCreateCommandEncoder,
+  /** @export */
+  wgpuDeviceCreateComputePipeline: _wgpuDeviceCreateComputePipeline,
   /** @export */
   wgpuDeviceCreatePipelineLayout: _wgpuDeviceCreatePipelineLayout,
   /** @export */
