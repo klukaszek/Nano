@@ -115,7 +115,7 @@
                                                                                \
     static inline void NAME##_push(NAME *s, T value) {                         \
         if (NAME##_is_full(s)) {                                               \
-            printf("Stack is full! Cannot push element.\n");                   \
+            LOG("Stack is full! Cannot push element.\n");                      \
             return;                                                            \
         }                                                                      \
         s->data[++s->top] = value;                                             \
@@ -123,7 +123,7 @@
                                                                                \
     static inline T NAME##_pop(NAME *s) {                                      \
         if (NAME##_is_empty(s)) {                                              \
-            printf("Stack is empty! Cannot pop element.\n");                   \
+            LOG("Stack is empty! Cannot pop element.\n");                      \
             T dummy;                                                           \
             return dummy; /* Return a dummy value, handle this in your code */ \
         }                                                                      \
@@ -132,7 +132,7 @@
                                                                                \
     static inline T NAME##_peek(NAME *s) {                                     \
         if (NAME##_is_empty(s)) {                                              \
-            printf("Stack is empty! Cannot peek element.\n");                  \
+            LOG("Stack is empty! Cannot peek element.\n");                     \
             T dummy;                                                           \
             return dummy; /* Return a dummy value, handle this in your code */ \
         }                                                                      \
@@ -141,7 +141,7 @@
                                                                                \
     static inline void NAME##_remove(NAME *s, T value) {                       \
         if (NAME##_is_empty(s)) {                                              \
-            printf("NANO: Array is empty! Cannot remove element.\n");          \
+            LOG("NANO: Array is empty! Cannot remove element.\n");             \
             return;                                                            \
         }                                                                      \
         int i, j;                                                              \
@@ -154,15 +154,15 @@
                 return;                                                        \
             }                                                                  \
         }                                                                      \
-        printf("NANO: Element not found in the array.\n");                     \
+        LOG("NANO: Element not found in the array.\n");                        \
     }                                                                          \
                                                                                \
     static inline void NAME##_print(NAME *s) {                                 \
-        printf("Array contents:\n");                                           \
+        LOG("Array contents:\n");                                              \
         for (int i = 0; i <= s->top; i++) {                                    \
-            printf("%d ", s->data[i]);                                         \
+            LOG("%d ", s->data[i]);                                            \
         }                                                                      \
-        printf("\n");                                                          \
+        LOG("\n");                                                             \
     }
 
 // Nano Binding & Buffer Declarations
@@ -689,8 +689,7 @@ void nano_map_read_callback(WGPUBufferMapAsyncStatus status, void *userdata) {
 
 // Copy the contents of a GPU buffer to the CPU
 // This is achieved using a staging buffer to read the data back to the CPU
-nano_gpu_data_t nano_copy_buffer_to_cpu(WGPUBuffer *src,
-                                        size_t src_offset,
+nano_gpu_data_t nano_copy_buffer_to_cpu(WGPUBuffer *src, size_t src_offset,
                                         size_t dst_offset, size_t size,
                                         WGPUBufferDescriptor *staging_desc) {
     nano_gpu_data_t result = {0};
@@ -759,7 +758,7 @@ nano_gpu_data_t nano_copy_buffer_to_cpu(WGPUBuffer *src,
     // Map the staging buffer for reading asynchronously
     wgpuBufferMapAsync(staging_buffer, WGPUMapMode_Read, 0, size,
                        nano_map_read_callback, userdata);
-    
+
     // Return a struct that holds a pointer that will indicate when
     // the data is safe to be copied from.
     return (nano_gpu_data_t){.data = dst, .size = size, .status = status};
@@ -2012,6 +2011,106 @@ WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
     }
 
     return shader->render_pipeline;
+}
+
+// Execute a shader pass for a single shader based on the
+// pipelines, and the bindgroups.
+// To access the data from the shader execution, we can use
+// nano_copy_buffer_to_cpu(...) to copy the data from the GPU buffer
+// to a struct in memory.
+void nano_execute_shader(nano_shader_t *shader) {
+    if (shader == NULL) {
+        fprintf(stderr, "NANO: nano_execute_shader() -> Shader is NULL\n");
+        return;
+    }
+    if (!shader->in_use) {
+        fprintf(stderr, "NANO: Shader %u is not active\n", shader->id);
+        return;
+    }
+
+    WGPUQueue queue = wgpuDeviceGetQueue(nano_app.wgpu->device);
+
+    // Create a new command encoder for the compute pass
+    WGPUCommandEncoder command_encoder =
+        wgpuDeviceCreateCommandEncoder(nano_app.wgpu->device, NULL);
+
+    bool render_pass_queued = false;
+
+    // Find the compute shader in the shader info entry points list
+    for (int i = 0; i < shader->info.entry_point_count; i++) {
+        if (shader->info.entry_points[i].type == COMPUTE) {
+
+            // Begin a compute pass to execute compute shader
+            WGPUComputePassEncoder compute_pass =
+                wgpuCommandEncoderBeginComputePass(command_encoder, NULL);
+            wgpuComputePassEncoderSetPipeline(compute_pass,
+                                              shader->compute_pipeline);
+
+            // Set the bind groups for the compute pass
+            for (int j = 0; j < shader->layout.num_layouts; j++) {
+                wgpuComputePassEncoderSetBindGroup(
+                    compute_pass, j, nano_get_bindgroup(shader, j), 0, NULL);
+            }
+
+            // Get the workgroup size from the shader info
+            struct WorkgroupSize workgroup_size =
+                shader->info.entry_points[i].workgroup_size;
+
+            // Dispatch the compute shader with the number of workgroups
+            uint32_t x = workgroup_size.x;
+            uint32_t y = workgroup_size.y;
+            uint32_t z = workgroup_size.z;
+            wgpuComputePassEncoderDispatchWorkgroups(compute_pass, x, y, z);
+
+            // Finish the compute pass
+            wgpuComputePassEncoderEnd(compute_pass);
+
+            // submit the command buffer that contains the compute
+            WGPUCommandBuffer command_buffer =
+                wgpuCommandEncoderFinish(command_encoder, NULL);
+            wgpuQueueSubmit(queue, 1, &command_buffer);
+        } else {
+            // If a shader has a vertex and fragment entry point, we can
+            // queue a render pass here.
+            // If the shader has both, this is only called once to make
+            // sure the same render pass is not queued multiple times.
+            if (!render_pass_queued) {
+
+                // LOG("DEMO: Render pass not yet implemented!\n");
+                // WGPURenderPassEncoder render_pass =
+                //     wgpuCommandEncoderBeginRenderPass(command_encoder, NULL);
+                // wgpuRenderPassEncoderSetPipeline(render_pass,
+                //                                  shader->render_pipeline);
+                //
+                // // Assign the bind groups for the render pass
+                // for (int j = 0; j < shader->layout.num_layouts; j++) {
+                //     wgpuRenderPassEncoderSetBindGroup(
+                //         render_pass, j, nano_get_bindgroup(shader, j), 0,
+                //         NULL);
+                // }
+
+                render_pass_queued = true;
+            }
+        }
+    }
+}
+
+// Iterate over all active shaders in the shader pool and execute each shader
+// with the appropriate bindgroups and pipelines loaded into the GPU.
+void nano_execute_shaders(void) {
+
+    WGPUQueue queue = wgpuDeviceGetQueue(nano_app.wgpu->device);
+
+    // Iterate over all active shaders in the shader pool
+    int num_active_shaders = nano_num_active_shaders(&nano_app.shader_pool);
+    for (int i = 0; i < num_active_shaders; i++) {
+        uint32_t shader_id =
+            nano_get_active_shader_id(&nano_app.shader_pool, i);
+        nano_shader_t *shader =
+            nano_get_shader(&nano_app.shader_pool, shader_id);
+        // LOG("NANO: Shader ID: %u is being executed...\n", shader_id);
+        nano_execute_shader(shader);
+    }
 }
 
 // Core Application Functions (init, event, cleanup)
