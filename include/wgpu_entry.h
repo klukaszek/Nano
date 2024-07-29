@@ -211,9 +211,9 @@ static wgpu_state_t state;
 
 // Quick and dirty logging
 #ifdef WGPU_BACKEND_DEBUG
-    #define LOG(...) printf(__VA_ARGS__)
+    #define WGPU_LOG(...) printf(__VA_ARGS__)
 #else
-    #define LOG(...)
+    #define WGPU_LOG(...)
 #endif
 
 #define wgpu_def(val, def) ((val == 0) ? def : val)
@@ -491,7 +491,7 @@ static void emsc_update_canvas_size() {
     state.width = (int)w;
     state.height = (int)h;
 
-    LOG("WGPU Backend -> emsc_update_canvas_size(): %.2f %.2f\n", state.width,
+    WGPU_LOG("WGPU Backend -> emsc_update_canvas_size(): %.2f %.2f\n", state.width,
         state.height);
 }
 
@@ -604,7 +604,7 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
             state->key_down_cb((int)wgpu_key);
         }
 
-        LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+        WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         // Send the key event to ImGui if it is enabled
 #ifdef CIMGUI_WGPU
         ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
@@ -639,7 +639,7 @@ static EM_BOOL emsc_keyup_cb(int type, const EmscriptenKeyboardEvent *ev,
     if (WGPU_KEY_INVALID != wgpu_key) {
         if (state->key_down_cb) {
             state->key_down_cb((int)wgpu_key);
-            LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+            WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         }
 
 #ifdef CIMGUI_WGPU
@@ -677,7 +677,7 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
         ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, true);
 #endif
 
-        LOG("WGPU Backend -> emsc_mousedown_cb(): %d\n", ev->button);
+        WGPU_LOG("WGPU Backend -> emsc_mousedown_cb(): %d\n", ev->button);
     }
 
     return EM_TRUE;
@@ -726,7 +726,7 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     ImGui_ImplWGPU_ProcessMouseWheelEvent(-0.1f * (float)ev->deltaY);
 #endif
 
-    LOG("WGPU Backend -> emsc_wheel_cb(): %f\n", ev->deltaY);
+    WGPU_LOG("WGPU Backend -> emsc_wheel_cb(): %f\n", ev->deltaY);
     return EM_TRUE;
 }
 
@@ -788,7 +788,7 @@ static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
     (void)userdata;
     if (type != WGPUErrorType_NoError) {
-        LOG("WGPU Backend: ERROR: %s\n", message);
+        WGPU_LOG("WGPU Backend: ERROR: %s\n", message);
     }
 }
 
@@ -799,7 +799,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     (void)userdata;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestDeviceStatus_Success) {
-        LOG("WGPU Backend: wgpuAdapterRequestDevice failed with %s!\n", msg);
+        WGPU_LOG("WGPU Backend: wgpuAdapterRequestDevice failed with %s!\n", msg);
         state->async_setup_failed = true;
         return;
     }
@@ -818,7 +818,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     };
     state->surface = wgpuInstanceCreateSurface(state->instance, &surf_desc);
     if (!state->surface) {
-        LOG("WGPU Backend: wgpuInstanceCreateSurface() failed.\n");
+        WGPU_LOG("WGPU Backend: wgpuInstanceCreateSurface() failed.\n");
         state->async_setup_failed = true;
         return;
     }
@@ -833,7 +833,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
         state->desc.res_x, state->desc.res_y, state->width, state->height,
         state->desc.sample_count, NULL);
     if (!state->imgui_data) {
-        LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
+        WGPU_LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
         state->async_setup_failed = true;
         return;
     }
@@ -849,7 +849,7 @@ static void request_adapter_cb(WGPURequestAdapterStatus status,
     (void)msg;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestAdapterStatus_Success) {
-        LOG("WGPU Backend: wgpuInstanceRequestAdapter failed!\n");
+        WGPU_LOG("WGPU Backend: wgpuInstanceRequestAdapter failed!\n");
         state->async_setup_failed = true;
     }
     state->adapter = adapter;
@@ -933,7 +933,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     assert(0 == state->msaa_tex);
     assert(0 == state->msaa_view);
 
-    LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
+    WGPU_LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
         (int)state->width, (int)state->height);
 
     state->swapchain = wgpuDeviceCreateSwapChain(
@@ -947,7 +947,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
         });
 
     assert(state->swapchain);
-    LOG("WGPU Backend: Swapchain created successfully.\n");
+    WGPU_LOG("WGPU Backend: Swapchain created successfully.\n");
 
     if (!state->desc.no_depth_buffer) {
         state->depth_stencil_tex = wgpuDeviceCreateTexture(
@@ -971,7 +971,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     }
 
     if (state->desc.sample_count > 1) {
-        LOG("WGPU Backend: Creating MSAA texture with dimensions: %dx%d\n",
+        WGPU_LOG("WGPU Backend: Creating MSAA texture with dimensions: %dx%d\n",
             (int)state->width, (int)state->height);
         state->msaa_tex = wgpuDeviceCreateTexture(
             state->device,
