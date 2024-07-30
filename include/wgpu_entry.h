@@ -160,9 +160,9 @@ typedef void (*wgpu_mouse_wheel_func)(float v);
 
 typedef struct {
     const char *title;
-    int res_x;
-    int res_y;
-    int sample_count;
+    float res_x;
+    float res_y;
+    uint32_t sample_count;
     bool no_depth_buffer;
     wgpu_init_func init_cb;
     wgpu_frame_func frame_cb;
@@ -171,8 +171,8 @@ typedef struct {
 
 typedef struct {
     wgpu_desc_t desc;
-    int width;
-    int height;
+    float width;
+    float height;
     WGPUInstance instance;
     WGPUAdapter adapter;
     WGPUDevice device;
@@ -202,15 +202,18 @@ typedef struct {
     bool async_setup_done;
     bool async_setup_failed;
     double last_frame_time;
+#ifdef CIMGUI_WGPU
+    ImGui_ImplWGPU_Data *imgui_data;
+#endif
 } wgpu_state_t;
 
 static wgpu_state_t state;
 
 // Quick and dirty logging
 #ifdef WGPU_BACKEND_DEBUG
-    #define LOG(...) printf(__VA_ARGS__)
+    #define WGPU_LOG(...) printf(__VA_ARGS__)
 #else
-    #define LOG(...)
+    #define WGPU_LOG(...)
 #endif
 
 #define wgpu_def(val, def) ((val == 0) ? def : val)
@@ -219,6 +222,7 @@ static wgpu_state_t state;
 // (in this case its just emscripten)
 void wgpu_platform_start(wgpu_state_t *state);
 void wgpu_swapchain_init(wgpu_state_t *state);
+void wgpu_swapchain_reinit(wgpu_state_t *state);
 static double emsc_get_frametime(void);
 static bool emsc_fullscreen(char *id);
 
@@ -320,6 +324,12 @@ static void wgpu_init_default_pipeline() {
         .size = sizeof(state.default_pipeline_info.clear_color),
         .mappedAtCreation = false,
     };
+
+    // Release the default uniform buffer if it exists
+    if (state.default_pipeline_info.uniform_buffer) {
+        wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
+    }
+
     state.default_pipeline_info.uniform_buffer =
         wgpuDeviceCreateBuffer(device, &uniform_buffer_desc);
 
@@ -371,6 +381,7 @@ static void wgpu_init_default_pipeline() {
     // Create render pipeline
     WGPURenderPipelineDescriptor pipeline_desc = {
         .layout = pipeline_layout,
+        .label = "Nano Default Render Pipeline",
         .vertex =
             (WGPUVertexState){
                 .module = shader,
@@ -387,7 +398,7 @@ static void wgpu_init_default_pipeline() {
                                  .cullMode = WGPUCullMode_None},
         .multisample =
             (WGPUMultisampleState){
-                .count = 1,
+                .count = state.desc.sample_count,
                 .mask = ~0u,
                 .alphaToCoverageEnabled = false,
             },
@@ -407,6 +418,11 @@ static void wgpu_init_default_pipeline() {
             },
         .depthStencil = NULL,
     };
+    
+    // Release the default pipeline if it exists
+    if (state.default_pipeline_info.pipeline) {
+        wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
+    }
 
     // Assign the default pipeline to the nano app state
     state.default_pipeline_info.pipeline =
@@ -424,6 +440,11 @@ static void wgpu_init_default_pipeline() {
         .entryCount = 1,
         .entries = &bind_group_entry,
     };
+    
+    // Release the default bind group if it exists
+    if (state.default_pipeline_info.bind_group) {
+        wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
+    }
 
     // Assign the default bind group to the nano app state
     state.default_pipeline_info.bind_group =
@@ -470,7 +491,7 @@ static void emsc_update_canvas_size() {
     state.width = (int)w;
     state.height = (int)h;
 
-    LOG("WGPU Backend -> emsc_update_canvas_size(): %d %d\n", state.width,
+    WGPU_LOG("WGPU Backend -> emsc_update_canvas_size(): %.2f %.2f\n", state.width,
         state.height);
 }
 
@@ -484,8 +505,10 @@ static EM_BOOL emsc_size_changed(int event_type,
     // // userdata.
     // wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
+    wgpu_swapchain_reinit(&state);
 #ifdef CIMGUI_WGPU
-    ImGui_ImplWGPU_ScaleUIToCanvas(state.desc.res_x, state.desc.res_y, state.width, state.height);
+    ImGui_ImplWGPU_ScaleUIToCanvas(state.desc.res_x, state.desc.res_y,
+                                   state.width, state.height);
 #endif
     return true;
 }
@@ -581,7 +604,7 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
             state->key_down_cb((int)wgpu_key);
         }
 
-        LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+        WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         // Send the key event to ImGui if it is enabled
 #ifdef CIMGUI_WGPU
         ImGui_ImplWGPU_ProcessKeyEvent((int)wgpu_key, true);
@@ -616,7 +639,7 @@ static EM_BOOL emsc_keyup_cb(int type, const EmscriptenKeyboardEvent *ev,
     if (WGPU_KEY_INVALID != wgpu_key) {
         if (state->key_down_cb) {
             state->key_down_cb((int)wgpu_key);
-            LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
+            WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         }
 
 #ifdef CIMGUI_WGPU
@@ -654,7 +677,7 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
         ImGui_ImplWGPU_ProcessMouseButtonEvent(ev->button, true);
 #endif
 
-        LOG("WGPU Backend -> emsc_mousedown_cb(): %d\n", ev->button);
+        WGPU_LOG("WGPU Backend -> emsc_mousedown_cb(): %d\n", ev->button);
     }
 
     return EM_TRUE;
@@ -703,7 +726,7 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
     ImGui_ImplWGPU_ProcessMouseWheelEvent(-0.1f * (float)ev->deltaY);
 #endif
 
-    LOG("WGPU Backend -> emsc_wheel_cb(): %f\n", ev->deltaY);
+    WGPU_LOG("WGPU Backend -> emsc_wheel_cb(): %f\n", ev->deltaY);
     return EM_TRUE;
 }
 
@@ -765,7 +788,7 @@ static void error_cb(WGPUErrorType type, const char *message, void *userdata) {
     (void)type;
     (void)userdata;
     if (type != WGPUErrorType_NoError) {
-        LOG("WGPU Backend: ERROR: %s\n", message);
+        WGPU_LOG("WGPU Backend: ERROR: %s\n", message);
     }
 }
 
@@ -776,7 +799,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     (void)userdata;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestDeviceStatus_Success) {
-        LOG("WGPU Backend: wgpuAdapterRequestDevice failed with %s!\n", msg);
+        WGPU_LOG("WGPU Backend: wgpuAdapterRequestDevice failed with %s!\n", msg);
         state->async_setup_failed = true;
         return;
     }
@@ -795,7 +818,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     };
     state->surface = wgpuInstanceCreateSurface(state->instance, &surf_desc);
     if (!state->surface) {
-        LOG("WGPU Backend: wgpuInstanceCreateSurface() failed.\n");
+        WGPU_LOG("WGPU Backend: wgpuInstanceCreateSurface() failed.\n");
         state->async_setup_failed = true;
         return;
     }
@@ -805,9 +828,15 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
 #ifdef CIMGUI_WGPU
     // Once the swapchain is created, we can initialize ImGui
     // This is only done if the CIMGUI_WGPU macro is defined
-    ImGui_ImplWGPU_Init(state->device, 2, wgpu_get_color_format(),
-                        WGPUTextureFormat_Undefined, state->desc.res_x, state->desc.res_y, state->width,
-                        state->height);
+    state->imgui_data = ImGui_ImplWGPU_Init(
+        state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
+        state->desc.res_x, state->desc.res_y, state->width, state->height,
+        state->desc.sample_count, NULL);
+    if (!state->imgui_data) {
+        WGPU_LOG("WGPU Backend: ImGui_ImplWGPU_Init() failed.\n");
+        state->async_setup_failed = true;
+        return;
+    }
 #endif
     state->desc.init_cb();
     wgpuDevicePopErrorScope(state->device, error_cb, 0);
@@ -820,7 +849,7 @@ static void request_adapter_cb(WGPURequestAdapterStatus status,
     (void)msg;
     wgpu_state_t *state = userdata;
     if (status != WGPURequestAdapterStatus_Success) {
-        LOG("WGPU Backend: wgpuInstanceRequestAdapter failed!\n");
+        WGPU_LOG("WGPU Backend: wgpuInstanceRequestAdapter failed!\n");
         state->async_setup_failed = true;
     }
     state->adapter = adapter;
@@ -851,7 +880,9 @@ static EM_BOOL emsc_frame(double time, void *userdata) {
 
 /// Start platform specific code
 void wgpu_platform_start(wgpu_state_t *state) {
-    assert(state->instance == 0);
+
+    // Set the exit callback for the application
+    atexit(state->desc.shutdown_cb);
 
     // Set canvas size callbacks for emscripten
     emsc_update_canvas_size();
@@ -902,8 +933,8 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     assert(0 == state->msaa_tex);
     assert(0 == state->msaa_view);
 
-    LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
-        state->width, state->height);
+    WGPU_LOG("WGPU Backend: Creating swapchain with dimensions: %dx%d\n",
+        (int)state->width, (int)state->height);
 
     state->swapchain = wgpuDeviceCreateSwapChain(
         state->device, state->surface,
@@ -916,7 +947,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
         });
 
     assert(state->swapchain);
-    LOG("WGPU Backend: Swapchain created successfully.\n");
+    WGPU_LOG("WGPU Backend: Swapchain created successfully.\n");
 
     if (!state->desc.no_depth_buffer) {
         state->depth_stencil_tex = wgpuDeviceCreateTexture(
@@ -940,6 +971,8 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
     }
 
     if (state->desc.sample_count > 1) {
+        WGPU_LOG("WGPU Backend: Creating MSAA texture with dimensions: %dx%d\n",
+            (int)state->width, (int)state->height);
         state->msaa_tex = wgpuDeviceCreateTexture(
             state->device,
             &(WGPUTextureDescriptor){
@@ -984,6 +1017,24 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
     }
 }
 
+// Handle any swapchain reinitialization
+// Normally this is called when we swap to MSAA or back to non-MSAA
+void wgpu_swapchain_reinit(wgpu_state_t *state) {
+
+    // Release the old swapchain
+    wgpu_swapchain_discard(state);
+
+    // Reinitialize the swapchain
+    wgpu_swapchain_init(state);
+
+#ifdef CIMGUI_WGPU
+    state->imgui_data->multiSampleCount = state->desc.sample_count;
+    ImGui_ImplWGPU_InvalidateDeviceObjects();
+    ImGui_ImplWGPU_CreateDeviceObjects();
+#endif
+    wgpu_init_default_pipeline();
+}
+
 void wgpu_stop(void) {
     if (state.desc.shutdown_cb) {
         state.desc.shutdown_cb();
@@ -1017,6 +1068,8 @@ void wgpu_stop(void) {
         state.default_pipeline_info.bind_group = 0;
     }
 
+#ifdef CIMGUI_WGPU
     ImGui_ImplWGPU_Shutdown();
+#endif
 }
 #endif // WGPU_ENTRY_H
