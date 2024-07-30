@@ -1,6 +1,4 @@
 // Toggles stdout logging and enables the nano debug imgui overlay
-#include <emscripten/wasm_worker.h>
-#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 #define NANO_DEBUG
@@ -18,9 +16,8 @@ typedef struct {
     float value;
 } Data;
 
-#define NUM_DATA 2048
+#define NUM_DATA 65536
 #define MAX_ITERATIONS 100000
-#define NUM_CPU_THREADS 4
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
 // Nano Application

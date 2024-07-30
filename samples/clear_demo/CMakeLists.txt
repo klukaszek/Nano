@@ -6,7 +6,7 @@ set(CMAKE_EXECUTABLE_SUFFIX ".html")
 # Copy the assets to the build directory
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASSERTIONS --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=50mb -s STACK_SIZE=32mb")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=40mb -s STACK_SIZE=16mb")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -O3")
 
 include_directories(${CMAKE_SOURCE_DIR})
