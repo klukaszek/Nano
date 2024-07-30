@@ -12,5 +12,13 @@ fn f(x: f32) -> f32 {
 @compute @workgroup_size(32)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let index = global_id.x;
-    output[index].value = f(input[index].value);
+
+    let max_iterations = 100000;
+
+    // Run the kernel 100000 times to test the performance of Nano's
+    // compute shader compiler.
+    for (var i = 0; i < max_iterations; i = i + 1) {
+        output[index].value = f(input[index].value);
+        input[index].value = output[index].value;
+    }
 }

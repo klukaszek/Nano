@@ -1,4 +1,8 @@
 // Toggles stdout logging and enables the nano debug imgui overlay
+#include <emscripten/wasm_worker.h>
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
 #define NANO_DEBUG
 
 // // Debug WGPU Backend Implementation
@@ -14,23 +18,72 @@ typedef struct {
     float value;
 } Data;
 
+#define NUM_DATA 65536
+#define MAX_ITERATIONS 100000
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
 // Size of input and output buffers in this example
 size_t buffer_size;
 
 // GPU buffers for the input and output data
-WGPUBuffer *output_buffer, *input_buffer;
+WGPUBuffer output_buffer, input_buffer;
 
 // Nano shader structs for the compute and triangle shaders examples
 nano_shader_t *compute_shader;
 nano_shader_t *triangle_shader;
 
 // GPU data struct that contains the data and status of the copy operation
-nano_gpu_data_t *gpu_compute = NULL;
+nano_gpu_data_t gpu_compute;
 
 // Data that will be copied to from the nano_gpu_data_t struct
-Data output_data[64];
+Data output_data[NUM_DATA];
+pthread_t cpu_test_thread;
+bool cpu_test_complete = false;
+
+// Perform the equivalent shader operation on the CPU
+// This method is passed off to another thread to run on.
+void *cpu_test(void *data) {
+
+    Data in[NUM_DATA];
+    Data out[NUM_DATA];
+
+    bool *complete = (bool *)data;
+
+    for (int i = 0; i < NUM_DATA; ++i) {
+        in[i].value = i * 0.1f;
+    }
+
+    // Start the timer
+    clock_t test_start = clock();
+
+    // Run the equivalent shader on the CPU
+    for (int i = 0; i < MAX_ITERATIONS; ++i) {
+        for (int j = 0; j < NUM_DATA; ++j) {
+            out[j].value = in[j].value + 1.0f;
+        }
+
+        // Copy the output data back to the input data
+        memcpy(in, out, sizeof(Data) * NUM_DATA);
+    }
+
+    // End the timer
+    clock_t test_end = clock();
+
+    // Calculate the time it took to run the shader
+    double time = (double)(test_end - test_start) / CLOCKS_PER_SEC;
+    
+    LOG("CPU TEST: Running equivalent shader on CPU\n");
+    LOG("\tCPU TEST: %f seconds\n", time);
+    LOG("\tCPU TEST: Iterations %d\n", MAX_ITERATIONS);
+    LOG("\tCPU TEST: CPU Time per iteration %f\n", time / MAX_ITERATIONS);
+    LOG("\tCPU TEST: Last Output data[%d] = %f\n", NUM_DATA - 1,
+        out[NUM_DATA - 1].value);
+    LOG("CPU TEST: Finished running equivalent shader on CPU\n");
+
+    *complete = true;
+
+    return NULL;
+}
 
 // Initialization callback passed to wgpu_start()
 static void init(void) {
@@ -40,9 +93,18 @@ static void init(void) {
     // Initialize the nano project
     nano_default_init();
 
+    if (pthread_create(&cpu_test_thread, NULL, cpu_test, (void *)&cpu_test_complete) != 0) {
+        LOG("Failed to create thread\n");
+    }
+
+    // Get WGPU Limits
+    WGPUSupportedLimits supported_limits;
+    wgpuDeviceGetLimits(nano_app.wgpu->device, &supported_limits);
+    WGPULimits limits = supported_limits.limits;
+
     // Initialize the input data
-    Data input_data[64];
-    for (int i = 0; i < 64; ++i) {
+    Data input_data[NUM_DATA];
+    for (int i = 0; i < NUM_DATA; ++i) {
         input_data[i].value = i * 0.1f;
     }
 
@@ -53,7 +115,7 @@ static void init(void) {
     /* START OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
 
     // Set the buffer size for the compute shader
-    buffer_size = 64 * sizeof(float);
+    buffer_size = NUM_DATA * sizeof(float);
 
     // COMPUTE SHADER CREATION
     char compute_shader_name[] = "compute-wgpu.wgsl";
@@ -89,12 +151,16 @@ static void init(void) {
         nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
 
     // Assign buffer data to the shader
-    nano_shader_assign_buffer_data(compute_shader, 0, 0, sizeof(input_data), 64,
+    nano_shader_assign_buffer_data(compute_shader, 0, 0, buffer_size, NUM_DATA,
                                    0, input_data);
 
     // Assign buffer data to output buffer, pass NULL for data
-    nano_shader_assign_buffer_data(compute_shader, 0, 1, buffer_size, 0, 0,
-                                   NULL);
+    nano_shader_assign_buffer_data(compute_shader, 0, 1, buffer_size, NUM_DATA,
+                                   0, NULL);
+
+    // Assign output buffer to the shader so that the num_workgroups
+    // can be calculated based on the number of elements in the buffer
+    nano_compute_shader_assign_output_buffer(compute_shader, 0, 1);
 
     // Build and activate the compute shader
     // Once a shader is built, it can be activated and deactivated
@@ -107,18 +173,39 @@ static void init(void) {
     nano_shader_activate(triangle_shader, true);
 
     // Get the input buffer from the shader
-    input_buffer = nano_get_buffer(compute_shader, 0, 0);
+    input_buffer = nano_get_gpu_buffer(compute_shader, 0, 0);
 
     // Get the output buffer from the shader
-    output_buffer = nano_get_buffer(compute_shader, 0, 1);
+    output_buffer = nano_get_gpu_buffer(compute_shader, 0, 1);
+
+    nano_binding_info_t binding_info = nano_get_binding(compute_shader, 0, 0);
 
     // Once our shader is completely built and we have a compute pipeline, we
     // can write the data to the input buffers to be used in the shader pass.
-    nano_write_buffer(input_buffer, 0, input_data, sizeof(input_data));
+    nano_write_buffer(input_buffer, 0, input_data, NUM_DATA * sizeof(Data));
+
+    // Define the gpu data struct that will be used to read the data back from
+    // the GPU buffer
+    gpu_compute = (nano_gpu_data_t){
+        .size = sizeof(input_data),
+        .src = output_buffer,
+    };
 }
 
+// start and end time of performing n passes
+// of a compute shader and then copying the data back to the CPU
+clock_t start, end;
+bool started = false;
 // Frame callback passed to wgpu_start()
 static void frame(void) {
+
+    // Get start time to measure performance
+    // of n passes of the compute shader
+    if (!started) {
+        started = true;
+        start = clock();
+    }
+
     // Update necessary Nano app state at beginning of frame
     // Get the current command encoder (this is nano_app.wgpu->cmd_encoder)
     // A new command encoder is created with each frame
@@ -127,46 +214,60 @@ static void frame(void) {
     // Execute the shaders in the order that they were activated.
     nano_execute_shaders();
 
-    // When we want to retrieve the data from the GPU, we can copy the data
-    // from the GPU buffer to the CPU buffer. This is done by calling
-    // nano_copy_buffer_to_cpu() with the buffer you want to read from as the
-    // src. This returns a nano_gpu_data_t struct that contains the data and
-    // status of the copy operation. The status is a pointer to a boolean that
-    // is set to true when the copy operation is complete. The data is a pointer
-    // to the data that was copied from the GPU buffer. The data is only valid
-    // if the status is true.
-    if (compute_shader->in_use) {
-        gpu_compute =
-            nano_copy_buffer_to_cpu(output_buffer, 0, 0, buffer_size, NULL);
-        LOG("DEMO: Copying data from GPU to CPU\n");
-        // Deactivate the shader so that it is only executed once
-        nano_deactivate_shader(compute_shader);
-        LOG("DEMO: Deactivating compute shader\n");
-    };
-
     // Change Nano app state at end of frame
     nano_end_frame();
 
+    // When we want to retrieve the data from the GPU, we can copy the data
+    // from the GPU buffer to the CPU buffer. This is done by calling
+    // nano_copy_buffer_to_cpu() with the buffer you want to read from as
+    // the src. This returns a nano_gpu_data_t struct that contains the data
+    // and status of the copy operation. The locked state is a boolean that
+    // is set to true when the copy operation is complete. The data is a
+    // pointer to the data that was copied from the GPU buffer. The data is
+    // only valid if the locked state is true.
+    if (compute_shader->in_use && gpu_compute.locked == false) {
+        // Deactivate the shader to avoid a
+        // wgpuBufferGetMappedRange error when copying the data
+        nano_deactivate_shader(compute_shader);
+
+        // Copy the output buffer to the gpu data struct
+        int status = nano_copy_buffer_to_cpu(&gpu_compute, NULL);
+        if (status == NANO_FAIL) {
+            LOG("DEMO: Failed to copy data from GPU to CPU\n");
+            return;
+        }
+    }
+
     // Check if the copy from the GPU buffer to the CPU is complete
-    if (*gpu_compute->status == true) {
-
-        LOG("DEMO: Compute output ready.\n");
-
+    if (gpu_compute.locked == true) {
+        end = clock();
         // The data should either be copied off to a static array
         // or processed in place before the next frame.
-        // In this case, we are copying the data to the output_data static
-        // array.
-        memcpy(output_data, gpu_compute->data, buffer_size);
+        // In this case, we are copying the data to the output_data array.
+        memcpy(output_data, gpu_compute.data, buffer_size);
 
-        // For the purposes of this demo, we are printing the output data
-        for (int i = 0; i < 64; ++i) {
-            LOG("DEMO: Output data[%d] = %f\n", i, output_data[i].value);
+        LOG("GPU TEST: Running shader on GPU\n");
+
+        LOG("\tGPU TEST: %f seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
+        LOG("\tGPU TEST: Iterations %d (double check the shader)\n",
+            MAX_ITERATIONS);
+        LOG("\tGPU TEST: Last Output data[%d] = %f\n", NUM_DATA - 1,
+            output_data[NUM_DATA - 1].value);
+
+        LOG("GPU TEST: Finished running shader on GPU\n");
+
+        // Release the status lock on the GPU copy so that it will not
+        // execute again. If you do not release the lock, the copy
+        // operation will execute every frame.
+        nano_release_gpu_copy(&gpu_compute);
+    }
+    
+    // Check if the CPU test worker is done
+    if (cpu_test_complete) {
+        if (pthread_join(cpu_test_thread, NULL) != 0) {
+            LOG("Failed to join thread\n");
         }
-
-        // Free the GPU data after we are done with it
-        // We should have either copied the data off, or
-        // consumed the data in place before the next frame.
-        nano_free_gpu_data(gpu_compute);
+        cpu_test_complete = false;
     }
 }
 
@@ -175,6 +276,7 @@ static void shutdown(void) { nano_default_cleanup(); }
 
 // Program Entry Point
 int main(int argc, char *argv[]) {
+
     // Start a new WGPU application
     wgpu_start(&(wgpu_desc_t){
         .title = "Nano Basic Demo",
