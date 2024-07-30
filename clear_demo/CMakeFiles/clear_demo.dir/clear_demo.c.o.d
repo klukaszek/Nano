@@ -1,6 +1,11 @@
 samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/samples/clear_demo/clear_demo.c \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/wasm_worker.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/compat/time.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/time.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/features.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/alltypes.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/unistd.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/wasi/api.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/stddef.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/stddef.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stddef_header_macro.h \
@@ -12,21 +17,7 @@ samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stddef_offsetof.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/stdint.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/stdint.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/alltypes.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/stdint.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/atomic.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/inttypes.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/inttypes.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/features.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/em_types.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/stdbool.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/stdbool.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/pthread.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/sched.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/compat/time.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/time.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/unistd.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/wasi/api.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/bits/posix.h \
   /home/runner/work/Nano/Nano/nano.h \
   /home/runner/work/Nano/Nano/include/wgsl-parser/webgpu.h \
@@ -35,6 +26,9 @@ samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/emscripten.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/em_asm.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/em_macros.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/em_types.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/stdbool.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/stdbool.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/em_js.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/promise.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/compat/stdlib.h \
@@ -43,6 +37,8 @@ samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/wget.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/version.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/html5.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/pthread.h \
+  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/sched.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/eventloop.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/console.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten/html5_webgl.h \
