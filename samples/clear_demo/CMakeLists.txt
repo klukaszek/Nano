@@ -4,11 +4,11 @@ project(Nano)
 set(CMAKE_EXECUTABLE_SUFFIX ".html")
 
 # Copy the assets to the build directory
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASSERTIONS --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=100mb -s STACK_SIZE=32mb")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=100mb -s STACK_SIZE=64mb -s ALLOW_MEMORY_GROWTH")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -s FULL_ES2=1 -O3 -s WASM=1")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -sPTHREAD_POOL_SIZE=4")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -sPTHREAD_POOL_SIZE=5 -s WASM_WORKERS")
 
 include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
