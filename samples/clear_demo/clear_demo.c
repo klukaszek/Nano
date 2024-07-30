@@ -23,146 +23,6 @@ typedef struct {
 #define NUM_CPU_THREADS 4
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
-// CPU Testing
-// ------------------------------------------------------
-
-// CPU test thread and completion flag
-pthread_t cpu_test_thread;
-bool cpu_test_complete = false;
-
-typedef struct {
-    Data *in;
-    Data *out;
-    int start;
-    int end;
-    int iterations;
-} cpu_thread_data_t;
-
-// Perform the equivalent shader operation on the CPU
-// This method is passed off to another thread to run on.
-void *cpu_test_simple(void *data) {
-
-    Data in[NUM_DATA];
-    Data out[NUM_DATA];
-
-    bool *complete = (bool *)data;
-
-    for (int i = 0; i < NUM_DATA; ++i) {
-        in[i].value = i * 0.1f;
-    }
-
-    // Start the timer
-    clock_t test_start = clock();
-
-    // Run the equivalent shader on the CPU
-    for (int i = 0; i < MAX_ITERATIONS; ++i) {
-        for (int j = 0; j < NUM_DATA; ++j) {
-            out[j].value = in[j].value + 1.0f;
-        }
-
-        // Copy the output data back to the input data
-        memcpy(in, out, sizeof(Data) * NUM_DATA);
-    }
-
-    // End the timer
-    clock_t test_end = clock();
-
-    // Calculate the time it took to run the shader
-    double time = (double)(test_end - test_start) / CLOCKS_PER_SEC;
-
-    LOG("CPU TEST: Running single thread on CPU\n");
-    LOG("\tCPU TEST: %f seconds\n", time);
-    LOG("\tCPU TEST: Iterations %d\n", MAX_ITERATIONS);
-    LOG("\tCPU TEST: CPU Time per iteration %f\n", time / MAX_ITERATIONS);
-    LOG("\tCPU TEST: Last Output data[%d] = %f\n", NUM_DATA - 1,
-        out[NUM_DATA - 1].value);
-    LOG("CPU TEST: Finished running equivalent shader on CPU\n");
-
-    *complete = true;
-
-    return NULL;
-}
-
-// Chunk of the CPU test that will be run on a separate thread
-void *_cpu_test_threaded(void *data) {
-
-    cpu_thread_data_t *thread_data = (cpu_thread_data_t *)data;
-    int start = thread_data->start;
-    int end = thread_data->end;
-
-    for (int i = 0; i < thread_data->iterations; ++i) {
-        for (int j = start; j < end; ++j) {
-            thread_data->out[j].value = thread_data->in[j].value + 1.0f;
-        }
-
-        // Copy the output data back to the input data
-        memcpy(&thread_data->in[start], &thread_data->out[start],
-               sizeof(Data) * (thread_data->end - thread_data->start));
-    }
-
-    return NULL;
-}
-
-// Multithreaded array processing on the CPU
-void *cpu_test_threaded(void *data) {
-
-    Data in[NUM_DATA];
-    Data out[NUM_DATA];
-
-    pthread_t threads[NUM_CPU_THREADS];
-    cpu_thread_data_t thread_data[NUM_CPU_THREADS];
-
-    bool *complete = (bool *)data;
-
-    for (int i = 0; i < NUM_DATA; ++i) {
-        in[i].value = i * 0.1f;
-    }
-
-    // Get the chunk size for each thread
-    int chunk_size = NUM_DATA / NUM_CPU_THREADS;
-
-    // Start the timer
-    clock_t test_start = clock();
-
-    // Dispatch the threads on the CPU as chunks
-    // of the input data
-    for (int i = 0; i < NUM_CPU_THREADS; ++i) {
-        thread_data[i].in = (Data *)&in;
-        thread_data[i].out = (Data *)&out;
-        thread_data[i].start = i * chunk_size;
-        thread_data[i].end = (i + 1) * chunk_size;
-        thread_data[i].iterations = MAX_ITERATIONS;
-
-        if (pthread_create(&threads[i], NULL, _cpu_test_threaded,
-                           (void *)&thread_data[i]) != 0) {
-            LOG("Failed to create thread\n");
-        }
-    }
-
-    // Join threads
-    for (int i = 0; i < NUM_CPU_THREADS; ++i) {
-        if (pthread_join(threads[i], NULL) != 0) {
-            LOG("Failed to join thread %d\n", i);
-        }
-    }
-
-    clock_t test_end = clock();
-
-    double time = (double)(test_end - test_start) / CLOCKS_PER_SEC;
-
-    LOG("CPU TEST: Running multithreaded kernel on CPU\n");
-    LOG("\tCPU TEST: %f seconds\n", time);
-    LOG("\tCPU TEST: Iterations %d\n", MAX_ITERATIONS);
-    LOG("\tCPU TEST: CPU Time per iteration %f\n", time / MAX_ITERATIONS);
-    LOG("\tCPU TEST: Last Output data[%d] = %f\n", NUM_DATA - 1,
-        out[NUM_DATA - 1].value);
-    LOG("CPU TEST: Finished running equivalent shader on CPU\n");
-
-    return NULL;
-}
-
-// ------------------------------------------------------
-
 // Nano Application
 // ------------------------------------------------------
 
@@ -189,11 +49,6 @@ static void init(void) {
 
     // Initialize the nano project
     nano_default_init();
-
-    if (pthread_create(&cpu_test_thread, NULL, cpu_test_simple,
-                       (void *)&cpu_test_complete) != 0) {
-        LOG("Failed to create thread\n");
-    }
 
     // Get WGPU Limits
     WGPUSupportedLimits supported_limits;
@@ -358,28 +213,6 @@ static void frame(void) {
         // execute again. If you do not release the lock, the copy
         // operation will execute every frame.
         nano_release_gpu_copy(&gpu_compute);
-    }
-
-    // Check if the CPU test worker is done
-    if (cpu_test_complete) {
-        // Join the single threaded CPU test
-        if (pthread_join(cpu_test_thread, NULL) != 0) {
-            LOG("Failed to join thread\n");
-        }
-        cpu_test_complete = false;
-
-        // Initialize the CPU test threads
-        // Perform multithreaded CPU test once the single threaded test is done
-        if (pthread_create(&cpu_test_thread, NULL, cpu_test_threaded,
-                           (void *)&cpu_test_complete) != 0) {
-            LOG("Failed to create thread\n");
-        }
-        
-        // Join the threaded CPU test
-        if (pthread_join(cpu_test_thread, NULL) != 0) {
-            LOG("Failed to join thread\n");
-        }
-        cpu_test_complete = false;
     }
 }
 

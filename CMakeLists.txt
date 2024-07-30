@@ -37,11 +37,11 @@ find_library(CGLM_LIBRARY NAMES cglm PATHS ${CMAKE_SOURCE_DIR}/include/cglm/)
 add_library(Nano STATIC ${SOURCES})
 
 # Link the Nano library with necessary dependencies
-add_dependencies(Nano cimgui wgsl-parser cglm)
+add_dependencies(Nano cimgui wgsl-parser)
 target_link_libraries(Nano
     cimgui
     wgsl-parser
-    cglm
+    # cglm
 )
 
 add_subdirectory(samples)
