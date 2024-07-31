@@ -12,31 +12,31 @@
     #include "cimgui_impl_wgpu.h"
 #endif
 
-// Default wgsl shader for drawing to the screen
-static const char *wgpu_default_shader =
-    "struct Uniforms {\n"
-    "    clear_color: vec4<f32>,\n"
-    "};\n"
-    "@binding(0) @group(0) var<uniform> uniforms: Uniforms;\n"
-    "\n"
-    "struct VertexOutput {\n"
-    "    @builtin(position) position: vec4<f32>,\n"
-    "};\n"
-    "@vertex\n"
-    "fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n"
-    "    var pos = array<vec2<f32>, 3>(\n"
-    "        vec2<f32>(-1.0, -1.0),\n"
-    "        vec2<f32>( 3.0, -1.0),\n"
-    "        vec2<f32>(-1.0,  3.0)\n"
-    "    );\n"
-    "    var output: VertexOutput;\n"
-    "    output.position = vec4<f32>(pos[vertex_index], 0.0, 1.0);\n"
-    "    return output;\n"
-    "}\n"
-    "@fragment\n"
-    "fn fs_main() -> @location(0) vec4<f32> {\n"
-    "    return uniforms.clear_color;\n"
-    "}\n";
+// // Default wgsl shader for drawing to the screen
+// static const char *wgpu_default_shader =
+//     "struct Uniforms {\n"
+//     "    clear_color: vec4<f32>,\n"
+//     "};\n"
+//     "@binding(0) @group(0) var<uniform> uniforms: Uniforms;\n"
+//     "\n"
+//     "struct VertexOutput {\n"
+//     "    @builtin(position) position: vec4<f32>,\n"
+//     "};\n"
+//     "@vertex\n"
+//     "fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {\n"
+//     "    var pos = array<vec2<f32>, 3>(\n"
+//     "        vec2<f32>(-1.0, -1.0),\n"
+//     "        vec2<f32>( 3.0, -1.0),\n"
+//     "        vec2<f32>(-1.0,  3.0)\n"
+//     "    );\n"
+//     "    var output: VertexOutput;\n"
+//     "    output.position = vec4<f32>(pos[vertex_index], 0.0, 1.0);\n"
+//     "    return output;\n"
+//     "}\n"
+//     "@fragment\n"
+//     "fn fs_main() -> @location(0) vec4<f32> {\n"
+//     "    return uniforms.clear_color;\n"
+//     "}\n";
 
 typedef enum {
     WGPU_KEY_INVALID,
@@ -177,14 +177,8 @@ typedef struct {
     WGPUAdapter adapter;
     WGPUDevice device;
     WGPUSurface surface;
-    struct {
-        WGPUBuffer uniform_buffer;
-        WGPUBindGroup bind_group;
-        WGPURenderPipeline pipeline;
-        float clear_color[4];
-    } default_pipeline_info;
+    float clear_color[4];
     WGPUCommandEncoder cmd_encoder;
-    WGPURenderPipeline default_pipeline;
     WGPUSwapChain swapchain;
     WGPUTextureFormat render_format;
     WGPUTexture depth_stencil_tex;
@@ -236,9 +230,8 @@ void wgpu_start(const wgpu_desc_t *desc) {
     state.width = state.desc.res_x;
     state.height = state.desc.res_y;
     state.desc.sample_count = wgpu_def(state.desc.sample_count, 1);
-    state.default_pipeline_info = (typeof(state.default_pipeline_info)){
-        .clear_color = {0.0f, 0.0f, 0.0f, 1.0f},
-    };
+    memcpy(state.clear_color, (float[4]){0.0f, 0.0f, 0.0f, 1.0f},
+           sizeof(float[4]));
 
     wgpu_platform_start(&state);
 }
@@ -312,149 +305,149 @@ static bool wgpu_toggle_fullscreen(char *id) {
     return emsc_fullscreen(id) == EMSCRIPTEN_RESULT_SUCCESS;
 }
 
-// Default Render Pipeline For Drawing To The Screen
-// -------------------------------------------------
-static void wgpu_init_default_pipeline() {
-    WGPUDevice device = state.device;
-
-    // Create uniform buffer
-    WGPUBufferDescriptor uniform_buffer_desc = {
-        .label = "Nano Default Uniform Buffer",
-        .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-        .size = sizeof(state.default_pipeline_info.clear_color),
-        .mappedAtCreation = false,
-    };
-
-    // Release the default uniform buffer if it exists
-    if (state.default_pipeline_info.uniform_buffer) {
-        wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
-    }
-
-    state.default_pipeline_info.uniform_buffer =
-        wgpuDeviceCreateBuffer(device, &uniform_buffer_desc);
-
-    // Create bind group layout
-    WGPUBindGroupLayoutEntry bind_group_layout_entry = {
-        .binding = 0,
-        .visibility = WGPUShaderStage_Fragment,
-        .buffer =
-            {
-                .type = WGPUBufferBindingType_Uniform,
-                .hasDynamicOffset = false,
-                .minBindingSize =
-                    sizeof(state.default_pipeline_info.clear_color),
-            },
-        .sampler = {0},
-    };
-
-    WGPUBindGroupLayoutDescriptor bind_group_layout_desc = {
-        .entryCount = 1,
-        .entries = &bind_group_layout_entry,
-    };
-
-    WGPUBindGroupLayout bind_group_layout =
-        wgpuDeviceCreateBindGroupLayout(device, &bind_group_layout_desc);
-
-    // Create shader module
-    WGPUShaderModuleDescriptor shader_desc = {
-        .nextInChain = NULL,
-        .label = "Nano Default Draw WGSL Shader",
-    };
-    WGPUShaderModuleWGSLDescriptor shader_wgsl_desc = {
-        .chain =
-            (WGPUChainedStruct){.next = NULL,
-                                .sType = WGPUSType_ShaderModuleWGSLDescriptor},
-        .code = wgpu_default_shader,
-    };
-    shader_desc.nextInChain = &shader_wgsl_desc.chain;
-    WGPUShaderModule shader =
-        wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-    // Create pipeline layout
-    WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
-        .bindGroupLayoutCount = 1,
-        .bindGroupLayouts = &bind_group_layout,
-    };
-    WGPUPipelineLayout pipeline_layout =
-        wgpuDeviceCreatePipelineLayout(device, &pipeline_layout_desc);
-
-    // Create render pipeline
-    WGPURenderPipelineDescriptor pipeline_desc = {
-        .layout = pipeline_layout,
-        .label = "Nano Default Render Pipeline",
-        .vertex =
-            (WGPUVertexState){
-                .module = shader,
-                .entryPoint = "vs_main",
-                .constantCount = 0,
-                .constants = NULL,
-                .bufferCount = 0,
-                .buffers = NULL,
-            },
-        .primitive =
-            (WGPUPrimitiveState){.topology = WGPUPrimitiveTopology_TriangleList,
-                                 .stripIndexFormat = WGPUIndexFormat_Undefined,
-                                 .frontFace = WGPUFrontFace_CCW,
-                                 .cullMode = WGPUCullMode_None},
-        .multisample =
-            (WGPUMultisampleState){
-                .count = state.desc.sample_count,
-                .mask = ~0u,
-                .alphaToCoverageEnabled = false,
-            },
-        .fragment =
-            &(WGPUFragmentState){
-                .module = shader,
-                .entryPoint = "fs_main",
-                .constantCount = 0,
-                .constants = NULL,
-                .targetCount = 1,
-                .targets =
-                    &(WGPUColorTargetState){
-                        .format = wgpu_get_color_format(),
-                        .blend = NULL,
-                        .writeMask = WGPUColorWriteMask_All,
-                    },
-            },
-        .depthStencil = NULL,
-    };
-    
-    // Release the default pipeline if it exists
-    if (state.default_pipeline_info.pipeline) {
-        wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
-    }
-
-    // Assign the default pipeline to the nano app state
-    state.default_pipeline_info.pipeline =
-        wgpuDeviceCreateRenderPipeline(device, &pipeline_desc);
-
-    // Create bind group
-    WGPUBindGroupEntry bind_group_entry = {
-        .binding = 0,
-        .buffer = state.default_pipeline_info.uniform_buffer,
-        .offset = 0,
-        .size = sizeof(state.default_pipeline_info.clear_color),
-    };
-    WGPUBindGroupDescriptor bind_group_desc = {
-        .layout = bind_group_layout,
-        .entryCount = 1,
-        .entries = &bind_group_entry,
-    };
-    
-    // Release the default bind group if it exists
-    if (state.default_pipeline_info.bind_group) {
-        wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
-    }
-
-    // Assign the default bind group to the nano app state
-    state.default_pipeline_info.bind_group =
-        wgpuDeviceCreateBindGroup(device, &bind_group_desc);
-
-    // Cleanup
-    wgpuPipelineLayoutRelease(pipeline_layout);
-    wgpuShaderModuleRelease(shader);
-    wgpuBindGroupLayoutRelease(bind_group_layout);
-}
+// // Default Render Pipeline For Drawing To The Screen
+// // -------------------------------------------------
+// static void wgpu_init_default_pipeline() {
+//     WGPUDevice device = state.device;
+//
+//     // Create uniform buffer
+//     WGPUBufferDescriptor uniform_buffer_desc = {
+//         .label = "Nano Default Uniform Buffer",
+//         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+//         .size = sizeof(state.default_pipeline_info.clear_color),
+//         .mappedAtCreation = false,
+//     };
+//
+//     // Release the default uniform buffer if it exists
+//     if (state.default_pipeline_info.uniform_buffer) {
+//         wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
+//     }
+//
+//     state.default_pipeline_info.uniform_buffer =
+//         wgpuDeviceCreateBuffer(device, &uniform_buffer_desc);
+//
+//     // Create bind group layout
+//     WGPUBindGroupLayoutEntry bind_group_layout_entry = {
+//         .binding = 0,
+//         .visibility = WGPUShaderStage_Fragment,
+//         .buffer =
+//             {
+//                 .type = WGPUBufferBindingType_Uniform,
+//                 .hasDynamicOffset = false,
+//                 .minBindingSize =
+//                     sizeof(state.default_pipeline_info.clear_color),
+//             },
+//         .sampler = {0},
+//     };
+//
+//     WGPUBindGroupLayoutDescriptor bind_group_layout_desc = {
+//         .entryCount = 1,
+//         .entries = &bind_group_layout_entry,
+//     };
+//
+//     WGPUBindGroupLayout bind_group_layout =
+//         wgpuDeviceCreateBindGroupLayout(device, &bind_group_layout_desc);
+//
+//     // Create shader module
+//     WGPUShaderModuleDescriptor shader_desc = {
+//         .nextInChain = NULL,
+//         .label = "Nano Default Draw WGSL Shader",
+//     };
+//     WGPUShaderModuleWGSLDescriptor shader_wgsl_desc = {
+//         .chain =
+//             (WGPUChainedStruct){.next = NULL,
+//                                 .sType = WGPUSType_ShaderModuleWGSLDescriptor},
+//         .code = wgpu_default_shader,
+//     };
+//     shader_desc.nextInChain = &shader_wgsl_desc.chain;
+//     WGPUShaderModule shader =
+//         wgpuDeviceCreateShaderModule(device, &shader_desc);
+//
+//     // Create pipeline layout
+//     WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
+//         .bindGroupLayoutCount = 1,
+//         .bindGroupLayouts = &bind_group_layout,
+//     };
+//     WGPUPipelineLayout pipeline_layout =
+//         wgpuDeviceCreatePipelineLayout(device, &pipeline_layout_desc);
+//
+//     // Create render pipeline
+//     WGPURenderPipelineDescriptor pipeline_desc = {
+//         .layout = pipeline_layout,
+//         .label = "Nano Default Render Pipeline",
+//         .vertex =
+//             (WGPUVertexState){
+//                 .module = shader,
+//                 .entryPoint = "vs_main",
+//                 .constantCount = 0,
+//                 .constants = NULL,
+//                 .bufferCount = 0,
+//                 .buffers = NULL,
+//             },
+//         .primitive =
+//             (WGPUPrimitiveState){.topology = WGPUPrimitiveTopology_TriangleList,
+//                                  .stripIndexFormat = WGPUIndexFormat_Undefined,
+//                                  .frontFace = WGPUFrontFace_CCW,
+//                                  .cullMode = WGPUCullMode_None},
+//         .multisample =
+//             (WGPUMultisampleState){
+//                 .count = state.desc.sample_count,
+//                 .mask = ~0u,
+//                 .alphaToCoverageEnabled = false,
+//             },
+//         .fragment =
+//             &(WGPUFragmentState){
+//                 .module = shader,
+//                 .entryPoint = "fs_main",
+//                 .constantCount = 0,
+//                 .constants = NULL,
+//                 .targetCount = 1,
+//                 .targets =
+//                     &(WGPUColorTargetState){
+//                         .format = wgpu_get_color_format(),
+//                         .blend = NULL,
+//                         .writeMask = WGPUColorWriteMask_All,
+//                     },
+//             },
+//         .depthStencil = NULL,
+//     };
+//     
+//     // Release the default pipeline if it exists
+//     if (state.default_pipeline_info.pipeline) {
+//         wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
+//     }
+//
+//     // Assign the default pipeline to the nano app state
+//     state.default_pipeline_info.pipeline =
+//         wgpuDeviceCreateRenderPipeline(device, &pipeline_desc);
+//
+//     // Create bind group
+//     WGPUBindGroupEntry bind_group_entry = {
+//         .binding = 0,
+//         .buffer = state.default_pipeline_info.uniform_buffer,
+//         .offset = 0,
+//         .size = sizeof(state.default_pipeline_info.clear_color),
+//     };
+//     WGPUBindGroupDescriptor bind_group_desc = {
+//         .layout = bind_group_layout,
+//         .entryCount = 1,
+//         .entries = &bind_group_entry,
+//     };
+//     
+//     // Release the default bind group if it exists
+//     if (state.default_pipeline_info.bind_group) {
+//         wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
+//     }
+//
+//     // Assign the default bind group to the nano app state
+//     state.default_pipeline_info.bind_group =
+//         wgpuDeviceCreateBindGroup(device, &bind_group_desc);
+//
+//     // Cleanup
+//     wgpuPipelineLayoutRelease(pipeline_layout);
+//     wgpuShaderModuleRelease(shader);
+//     wgpuBindGroupLayoutRelease(bind_group_layout);
+// }
 
 // Emscripten specific code
 // ----------------------------------------------------------------------------
@@ -1032,7 +1025,7 @@ void wgpu_swapchain_reinit(wgpu_state_t *state) {
     ImGui_ImplWGPU_InvalidateDeviceObjects();
     ImGui_ImplWGPU_CreateDeviceObjects();
 #endif
-    wgpu_init_default_pipeline();
+    // wgpu_init_default_pipeline();
 }
 
 void wgpu_stop(void) {
@@ -1053,20 +1046,20 @@ void wgpu_stop(void) {
         state.instance = 0;
     }
 
-    if (state.default_pipeline_info.pipeline) {
-        wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
-        state.default_pipeline_info.pipeline = 0;
-    }
-
-    if (state.default_pipeline_info.uniform_buffer) {
-        wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
-        state.default_pipeline_info.uniform_buffer = 0;
-    }
-
-    if (state.default_pipeline_info.bind_group) {
-        wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
-        state.default_pipeline_info.bind_group = 0;
-    }
+    // if (state.default_pipeline_info.pipeline) {
+    //     wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
+    //     state.default_pipeline_info.pipeline = 0;
+    // }
+    //
+    // if (state.default_pipeline_info.uniform_buffer) {
+    //     wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
+    //     state.default_pipeline_info.uniform_buffer = 0;
+    // }
+    //
+    // if (state.default_pipeline_info.bind_group) {
+    //     wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
+    //     state.default_pipeline_info.bind_group = 0;
+    // }
 
 #ifdef CIMGUI_WGPU
     ImGui_ImplWGPU_Shutdown();

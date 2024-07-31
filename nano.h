@@ -1483,6 +1483,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                 {
                     .module = shader_module,
                     .entryPoint = info->entry_points[vertex_index].entry,
+                    .bufferCount = 0,
                     .buffers = NULL,
                     // TODO: Add other vertex attributes here
                 },
@@ -1503,7 +1504,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                     .targetCount = 1,
                     .targets =
                         &(WGPUColorTargetState){
-                            .format = WGPUTextureFormat_BGRA8UnormSrgb,
+                            .format = wgpu_get_color_format(),
                             .blend =
                                 &(WGPUBlendState){
                                     .color =
@@ -2050,11 +2051,12 @@ WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
 // to a struct in memory.
 void nano_shader_execute(nano_shader_t *shader) {
     if (shader == NULL) {
-        LOG_ERR("NANO: nano_execute_shader() -> Shader is NULL\n");
+        LOG_ERR("NANO: nano_shader_execute() -> Shader is NULL\n");
         return;
     }
     if (!shader->in_use) {
-        LOG_ERR("NANO: Shader %u is not active\n", shader->id);
+        LOG_ERR("NANO: nano_shader_execute() -> Shader %u is not active\n",
+                shader->id);
         return;
     }
 
@@ -2114,18 +2116,44 @@ void nano_shader_execute(nano_shader_t *shader) {
             // sure the same render pass is not queued multiple times.
             if (!render_pass_queued) {
 
-                // LOG("DEMO: Render pass not yet implemented!\n");
-                // WGPURenderPassEncoder render_pass =
-                //     wgpuCommandEncoderBeginRenderPass(command_encoder, NULL);
-                // wgpuRenderPassEncoderSetPipeline(render_pass,
-                //                                  shader->render_pipeline);
-                //
-                // // Assign the bind groups for the render pass
-                // for (int j = 0; j < shader->layout.num_layouts; j++) {
-                //     wgpuRenderPassEncoderSetBindGroup(
-                //         render_pass, j, nano_get_bindgroup(shader, j), 0,
-                //         NULL);
-                // }
+                WGPURenderPassDescriptor render_pass_desc = {
+                    .colorAttachmentCount = 1,
+                    .colorAttachments =
+                        &(WGPURenderPassColorAttachment){
+                            .view = wgpu_get_render_view(),
+                            .depthSlice = ~0u,
+                            .resolveTarget =
+                                nano_app.settings.gfx.msaa.sample_count > 1
+                                    ? wgpuSwapChainGetCurrentTextureView(
+                                          nano_app.wgpu->swapchain)
+                                    : NULL,
+                            .loadOp = WGPULoadOp_Load,
+                            .storeOp = WGPUStoreOp_Store,
+                        },
+                    .depthStencilAttachment = NULL,
+                };
+
+                WGPURenderPassEncoder render_pass =
+                    wgpuCommandEncoderBeginRenderPass(command_encoder,
+                                                      &render_pass_desc);
+                wgpuRenderPassEncoderSetPipeline(render_pass,
+                                                 shader->render_pipeline);
+
+                // Assign the bind groups for the render pass
+                for (int j = 0; j < shader->layout.num_layouts; j++) {
+                    wgpuRenderPassEncoderSetBindGroup(
+                        render_pass, j, nano_get_bindgroup(shader, j), 0, NULL);
+                }
+
+                wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
+                wgpuRenderPassEncoderEnd(render_pass);
+
+                // submit the command buffer that contains the render pass
+                WGPUCommandBuffer command_buffer =
+                    wgpuCommandEncoderFinish(command_encoder, NULL);
+                wgpuQueueSubmit(queue, 1, &command_buffer);
+
+                LOG("NANO: Render pass queued for shader %u\n", shader->id);
 
                 render_pass_queued = true;
             }
@@ -2173,7 +2201,7 @@ static void nano_default_init(void) {
     // TODO: The buffers and shaders for this pipeline should
     // eventually be added to added to our buffer and shader pools
     // accordingly
-    wgpu_init_default_pipeline();
+    // wgpu_init_default_pipeline();
 
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
@@ -2538,10 +2566,8 @@ static void nano_demo_window(bool *show_debug) {
         igBullet();
 
         // Set the clear color for the frame
-        igSliderFloat4(
-            "RGBA Clear",
-            (float *)&nano_app.wgpu->default_pipeline_info.clear_color, 0.0f,
-            1.0f, "%.2f", 0);
+        igSliderFloat4("RGBA Clear", (float *)&nano_app.wgpu->clear_color, 0.0f,
+                       1.0f, "%.2f", 0);
 
         // Button to open the ImGui demo window
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
@@ -2574,16 +2600,6 @@ static void nano_draw_debug_ui() {
     // Create the draw data for the ImGui frame
     igRender();
 
-    float *clear_color =
-        (float *)&nano_app.wgpu->default_pipeline_info.clear_color;
-
-    // Write the uniform buffer with the clear color for the frame
-    wgpuQueueWriteBuffer(
-        wgpuDeviceGetQueue(nano_app.wgpu->device),
-        nano_app.wgpu->default_pipeline_info.uniform_buffer, 0,
-        &nano_app.wgpu->default_pipeline_info.clear_color,
-        sizeof(nano_app.wgpu->default_pipeline_info.clear_color));
-
     // Set the ImGui encoder to our current encoder
     // This is necessary to render the ImGui draw data
     ImGui_ImplWGPU_SetEncoder(cmd_encoder);
@@ -2610,12 +2626,8 @@ static void nano_draw_debug_ui() {
             nano_app.settings.gfx.msaa.sample_count > 1
                 ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
                 : NULL,
-        .loadOp = WGPULoadOp_Clear,
+        .loadOp = WGPULoadOp_Load,
         .storeOp = WGPUStoreOp_Store,
-        .clearValue = {.r = clear_color[0],
-                       .g = clear_color[1],
-                       .b = clear_color[2],
-                       .a = clear_color[3]},
     };
 
     WGPURenderPassDescriptor render_pass_desc = {
@@ -2632,14 +2644,6 @@ static void nano_draw_debug_ui() {
         wgpuCommandEncoderRelease(cmd_encoder);
         return;
     }
-
-    // Set our render pass encoder to use our pipeline and
-    wgpuRenderPassEncoderSetBindGroup(
-        render_pass, 0, nano_app.wgpu->default_pipeline_info.bind_group, 0,
-        NULL);
-    wgpuRenderPassEncoderSetPipeline(
-        render_pass, nano_app.wgpu->default_pipeline_info.pipeline);
-    wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
 
     // Render ImGui Draw Data
     // This will be refactored into a nano_cimgui_render function
@@ -2688,6 +2692,36 @@ static WGPUCommandEncoder nano_start_frame() {
     // Set the command encoder for the app state
     nano_app.wgpu->cmd_encoder = wgpuDeviceCreateCommandEncoder(
         nano_app.wgpu->device, &cmd_encoder_desc);
+
+    // Clear the swapchain with a color at the start of the frame
+    {
+        WGPURenderPassDescriptor render_pass_desc = {
+            .colorAttachmentCount = 1,
+            .colorAttachments =
+                &(WGPURenderPassColorAttachment){
+                    .view = wgpu_get_render_view(),
+                    .depthSlice = ~0u,
+                    .resolveTarget = nano_app.settings.gfx.msaa.sample_count > 1
+                                         ? wgpuSwapChainGetCurrentTextureView(
+                                               nano_app.wgpu->swapchain)
+                                         : NULL,
+                    .loadOp = WGPULoadOp_Clear,
+                    .storeOp = WGPUStoreOp_Store,
+                    .clearValue =
+                        (WGPUColor){
+                            .r = nano_app.wgpu->clear_color[0],
+                            .g = nano_app.wgpu->clear_color[1],
+                            .b = nano_app.wgpu->clear_color[2],
+                            .a = nano_app.wgpu->clear_color[3],
+                        },
+                },
+            .depthStencilAttachment = NULL,
+        };
+
+        WGPURenderPassEncoder pass =
+            wgpuCommandEncoderBeginRenderPass(nano_app.wgpu->cmd_encoder, &render_pass_desc);
+        wgpuRenderPassEncoderEnd(pass);
+    } // End of clear swapchain
 
     return nano_app.wgpu->cmd_encoder;
 }

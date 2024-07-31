@@ -1,6 +1,4 @@
 // Toggles stdout logging and enables the nano debug imgui overlay
-#include <emscripten/wasm_worker.h>
-#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 #define NANO_DEBUG
@@ -20,7 +18,6 @@ typedef struct {
 
 #define NUM_DATA 2048
 #define MAX_ITERATIONS 100000
-#define NUM_CPU_THREADS 4
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
 // Nano Application
@@ -61,11 +58,11 @@ static void init(void) {
         input_data[i].value = i * 0.1f;
     }
 
+    // ------------------------------------------------------
+    /* Example: Initialization of WGPU Shaders using Nano */
+
     // Initialize the buffer pool for the compute backend
     nano_init_shader_pool(&nano_app.shader_pool);
-
-    // ------------------------------------------------------
-    /* START OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
 
     // Set the buffer size for the compute shader
     buffer_size = NUM_DATA * sizeof(float);
