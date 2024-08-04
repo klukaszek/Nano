@@ -2230,6 +2230,8 @@ static void nano_default_cleanup(void) {
 // the event
 static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 
+#ifdef NANO_CIMGUI
+
 // This represents the demo window that has all of the Nano application
 // information and settings. This is a simple window that can be toggled on and
 // off. This is a simple example of how to use the ImGui API to create a window
@@ -2580,6 +2582,8 @@ static void nano_draw_debug_ui() {
         igEnd();
     }
 }
+
+#endif
 
 // -------------------------------------------------------------------------------
 // Nano Frame Update Functions

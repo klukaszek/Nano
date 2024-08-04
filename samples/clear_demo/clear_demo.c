@@ -2,6 +2,7 @@
 #include <time.h>
 #include <unistd.h>
 #define NANO_DEBUG
+#define NANO_CIMGUI
 
 // // Debug WGPU Backend Implementation
 // #define WGPU_BACKEND_DEBUG
