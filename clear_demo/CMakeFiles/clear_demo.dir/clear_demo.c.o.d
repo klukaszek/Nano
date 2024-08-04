@@ -47,7 +47,7 @@ samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o: \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/string.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/strings.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/webgpu/webgpu.h \
-  /home/runner/work/Nano/Nano/include/cimgui_impl_wgpu.h \
+  /home/runner/work/Nano/Nano/include/nano_cimgui.h \
   /home/runner/work/Nano/Nano/include/cimgui/cimgui.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/compat/stdarg.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/stdarg.h \

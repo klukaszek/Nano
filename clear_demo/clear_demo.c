@@ -2,6 +2,7 @@
 #include <time.h>
 #include <unistd.h>
 #define NANO_DEBUG
+#define NANO_CIMGUI
 
 // // Debug WGPU Backend Implementation
 // #define WGPU_BACKEND_DEBUG
@@ -58,11 +59,11 @@ static void init(void) {
         input_data[i].value = i * 0.1f;
     }
 
+    // ------------------------------------------------------
+    /* Example: Initialization of WGPU Shaders using Nano */
+
     // Initialize the buffer pool for the compute backend
     nano_init_shader_pool(&nano_app.shader_pool);
-
-    // ------------------------------------------------------
-    /* START OF COMPUTE PIPELINE AND SHADER IMPLEMENTATION */
 
     // Set the buffer size for the compute shader
     buffer_size = NUM_DATA * sizeof(float);
