@@ -3,8 +3,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define NANO_CIMGUI
 #define NANO_DEBUG
+#define NANO_CIMGUI
+// #define NANO_CIMGUI_DEBUG
 #include "nano.h"
 #include "wgpu_entry.h"
 
@@ -12,10 +13,7 @@
 // // Define this to enable seeing the WGPU logs.
 // // Useful for checking what WGPU objects are failing if they are properly
 // // labelled.
-// #define WGPU_BACKEND_DEBUG
-
-// // Debug WGPU + CIMGUI Implementation
-// #define NANO_CIMGUI_DEBUG
+#define WGPU_BACKEND_DEBUG
 
 #include "cimgui/cimgui.h"
 
@@ -296,7 +294,6 @@ static void shutdown(void) { nano_default_cleanup(); }
 
 // Program Entry Point
 int main(int argc, char *argv[]) {
-
     // Start a new WGPU application
     wgpu_start(&(wgpu_desc_t){
         .title = "Nano Basic Demo",

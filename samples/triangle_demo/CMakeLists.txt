@@ -15,7 +15,7 @@ include_directories(
             ${CMAKE_SOURCE_DIR}/include/
             )
 
-set(FILES triangle_demo.c)
+set(FILES triangle_demo.c ../../nano.h)
 
 # Add the triangle_demo executable 
 add_executable(triangle_demo ${FILES})

@@ -531,12 +531,15 @@ static EM_BOOL emsc_mousemove_cb(int type, const EmscriptenMouseEvent *ev,
                                  void *userdata) {
     (void)type;
     wgpu_state_t *state = (wgpu_state_t *)userdata;
+    #ifdef NANO_CIMGUI
+        if (state->imgui_data) {
+            nano_cimgui_process_mousepos_event((float)ev->targetX, (float)ev->targetY);
+        }
+    #endif
     if (state->mouse_pos_cb) {
         state->mouse_pos_cb((float)ev->targetX, (float)ev->targetY);
     }
-#ifdef NANO_CIMGUI
-    nano_cimgui_process_mousepos_event((float)ev->targetX, (float)ev->targetY);
-#endif
+
     return EM_TRUE;
 }
 
@@ -653,6 +656,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
         wgpuSurfaceGetPreferredFormat(state->surface, state->adapter);
     wgpu_swapchain_init(state);
 #ifdef NANO_CIMGUI
+
     // Once the swapchain is created, we can initialize ImGui
     // This is only done if the NANO_CIMGUI macro is defined
     state->imgui_data = nano_cimgui_init(
@@ -715,7 +719,6 @@ void wgpu_platform_start(wgpu_state_t *state) {
     emsc_update_canvas_size();
     emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, true,
                                    emsc_size_changed);
-
     // Set keyboard callbacks for emscripten
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, state, true,
                                     emsc_keydown_cb);

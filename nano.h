@@ -57,7 +57,8 @@
 //  NANO
 // -------------------------------------------------
 
-#pragma once
+#ifndef NANO_H
+#define NANO_H
 
 #include "webgpu.h"
 #include "wgpu_entry.h"
@@ -1040,7 +1041,9 @@ void nano_set_font(int index) {
         LOG_ERR("NANO: nano_set_font() -> Font is NULL\n");
         return;
     }
-
+    
+    LOG("NANO: Setting font to %s\n",
+        nano_app.font_info.fonts[index].name);
     ImGuiIO *io = igGetIO();
 
     // Set the font as the default font
@@ -2593,7 +2596,7 @@ static WGPUCommandEncoder nano_start_frame() {
     // Update the dimensions of the window
     nano_app.wgpu->width = wgpu_width();
     nano_app.wgpu->height = wgpu_height();
-
+    
     // Set the display size for ImGui
     ImGuiIO *io = igGetIO();
     io->DisplaySize =
@@ -2719,3 +2722,5 @@ static void nano_end_frame() {
         nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
     }
 }
+
+#endif // NANO_H
