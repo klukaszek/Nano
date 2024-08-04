@@ -238,8 +238,10 @@ static inline void nano_cimgui_set_encoder(WGPUCommandEncoder encoder);
 static inline void
 nano_cimgui_render_draw_data(ImDrawData *draw_data,
                              WGPURenderPassEncoder pass_encoder);
-static inline void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
-                                         const void *swapchain_info);
+static inline void
+nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                      WGPUTextureView (*get_render_view)(void),
+                      WGPUTextureView (*get_resolve_view)(void));
 static inline bool nano_cimgui_create_device_objects();
 static inline void nano_cimgui_invalidate_device_objects(void);
 static inline WGPUShaderModule
@@ -371,7 +373,7 @@ inline void nano_cimgui_shutdown(void) {
 }
 
 // Prepare for a new frame
-inline void nano_cimgui_new_frame(void) {
+static inline void nano_cimgui_new_frame(void) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     IM_ASSERT(bd != NULL && "Did you call nano_cimgui_init()?");
 
@@ -382,10 +384,10 @@ inline void nano_cimgui_new_frame(void) {
     emscripten_get_canvas_element_size("#canvas", &width, &height);
     io->DisplaySize = (ImVec2){(float)width, (float)height};
 
-    // Update time step (targeting 60 FPS)
+    // Update time step (targeting 144 FPS MAX for ImGui)
     double current_time = emscripten_get_now() / 1000.0;
     io->DeltaTime = bd->deltaTime ? (float)(current_time - bd->deltaTime)
-                                  : (float)(1.0f / 60.0f);
+                                  : (float)(1.0f / 144.0f);
     bd->deltaTime = current_time;
 
     // Create device objects if not already created
@@ -542,29 +544,15 @@ typedef struct nano_cimgui_swapchain_info {
 // This function requires a command encoder and swapchain info that contains the
 // render and resolve views. This function calls nano_cimgui_render_draw_data()
 // to render the ImGui draw data on the render pass created in this function.
-static inline void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
-                                         const void *swapchain_info) {
+static inline void
+nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                      WGPUTextureView (*get_render_view)(void),
+                      WGPUTextureView (*get_resolve_view)(void)) {
     assert(cmd_encoder != NULL && "Command encoder was NULL");
-    if (swapchain_info == NULL) {
-        ILOG("nano_cimgui_end_frame() -> Swapchain info was NULL");
-        return;
-    }
 
     // Get data from the swapchain info
-    WGPUTextureView render_view =
-        ((nano_cimgui_swapchain_info *)swapchain_info)->render_view;
-    WGPUTextureView resolve_view =
-        ((nano_cimgui_swapchain_info *)swapchain_info)->resolve_view;
-    if (!render_view) {
-        ILOG("Failed to get current swapchain texture view.\n");
-        return;
-    }
-    if (!resolve_view) {
-        ILOG("Failed to get current swapchain resolve texture view.\n");
-        return;
-    }
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
 
-    // Create the draw data for the ImGui frame
     igRender();
 
     // Set the ImGui encoder to our current encoder
@@ -573,14 +561,14 @@ static inline void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
 
     // Create a generic render pass color attachment
     WGPURenderPassColorAttachment color_attachment = {
-        .view = render_view,
+        .view = get_render_view(),
         // We set the depth slice to 0xFFFFFFFF to indicate that the
         // depth slice is not used.
         .depthSlice = ~0u,
         // If our view is a texture view (MSAA Samples > 1), we need
         // to resolve the texture to the swapchain texture (this is
         // resolved in resolve_view)
-        .resolveTarget = resolve_view,
+        .resolveTarget = get_resolve_view(),
         .loadOp = WGPULoadOp_Load,
         .storeOp = WGPUStoreOp_Store,
     };
@@ -595,7 +583,8 @@ static inline void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
     WGPURenderPassEncoder render_pass =
         wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
     if (!render_pass) {
-        ILOG("nano_cimgui_end_frame() -> Failed to begin default render pass encoder.\n");
+        ILOG("nano_cimgui_end_frame() -> Failed to begin default render pass "
+             "encoder.\n");
         wgpuCommandEncoderRelease(cmd_encoder);
         return;
     }

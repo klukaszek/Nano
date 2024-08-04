@@ -2,6 +2,7 @@
 #include "webgpu.h"
 #include <time.h>
 #include <unistd.h>
+#define WGPU_BACKEND_DEBUG
 #define NANO_DEBUG
 
 // // Debug WGPU Backend Implementation
@@ -37,21 +38,10 @@ float vertex_data[] = {
 
 // Nano shader structs for the compute and triangle shaders examples
 nano_shader_t *triangle_shader;
+char shader_path[256];
+char shader_code[8192];
 
 void setup_triangle_pipeline() {
-
-    // Vertex and Fragment shader creation
-    char triangle_shader_name[] = "uv-triangle.wgsl";
-    char shader_path[256];
-    snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
-             triangle_shader_name);
-
-    // Create the shader module
-    char shader_code[8192];
-    shader_code[0] = '\0';
-
-    memcpy(shader_code, nano_read_file(shader_path), 8192);
-    LOG("Shader code:\n%s\n", shader_code);
 
     WGPUShaderModuleWGSLDescriptor wgsl_desc = {
         .chain = {.next = NULL, .sType = WGPUSType_ShaderModuleWGSLDescriptor},
@@ -67,7 +57,7 @@ void setup_triangle_pipeline() {
 
     WGPUBufferDescriptor buffer_desc = {
         .size = sizeof(vertex_data),
-        .usage = WGPUBufferUsage_Vertex,
+        .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
         .mappedAtCreation = false,
     };
 
@@ -90,8 +80,9 @@ void setup_triangle_pipeline() {
     //                                              WGPUVertexAttribute
     //                                              *attribs, void *data);
     //
-    //       This method saves the information to the shader struct and used to create the
-    //       vertex buffer layout for render pipeline creation when the shader is built.
+    //       This method saves the information to the shader struct and used to
+    //       create the vertex buffer layout for render pipeline creation when
+    //       the shader is built.
     WGPUVertexAttribute attributes[2] = {
         {
             .format = WGPUVertexFormat_Float32x4,
@@ -117,10 +108,11 @@ void setup_triangle_pipeline() {
     // along with our other buffer layouts.
     //
     // TODO: Mostly implemented in Nano, but the vertex buffer layout is not
-    // automatically generated yet. 
+    // automatically generated yet.
     //
     // 1. Create nano_shader_assign_vertex_buffer()
-    // 2. Update nano_build_shader_pipelines() to create the vertex buffer layout
+    // 2. Update nano_build_shader_pipelines() to create the vertex buffer
+    // layout
     //    if vertex data is assigned to the shader.
     // 3. Update nano_execute_shader() to properly perform the render pass using
     //    the shader information.
@@ -182,8 +174,16 @@ void setup_triangle_pipeline() {
                          sizeof(vertex_data));
 }
 
+void release_triangle_pipeline() {
+    wgpuBufferRelease(triangle_vertex_buffer);
+    wgpuShaderModuleRelease(triangle_shader_module);
+    wgpuRenderPipelineRelease(triangle_pipeline);
+}
+
 // Render the triangle, takes the frame's command encoder as an argument
 void render_triangle(WGPUCommandEncoder encoder) {
+
+    setup_triangle_pipeline();
 
     // 2nd most important part of getting the shader to draw.
     WGPURenderPassColorAttachment color_attachment = {
@@ -215,6 +215,8 @@ void render_triangle(WGPUCommandEncoder encoder) {
                                          sizeof(vertex_data));
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(pass);
+
+    release_triangle_pipeline();
 }
 
 // Initialization callback passed to wgpu_start()
@@ -225,8 +227,6 @@ static void init(void) {
     // Initialize the nano project
     nano_default_init();
 
-    setup_triangle_pipeline();
-
     // Initialize the buffer pool for the compute backend
     nano_init_shader_pool(&nano_app.shader_pool);
 
@@ -234,6 +234,11 @@ static void init(void) {
     char triangle_shader_name[] = "uv-triangle.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
              triangle_shader_name);
+
+    // Get the shader code from the file
+    shader_code[0] = '\0';
+    memcpy(shader_code, nano_read_file(shader_path), 8192);
+    LOG("DEMO: Shader code:\n%s\n", shader_code);
 
     // uint32_t triangle_shader_id =
     //     nano_create_shader_from_file(shader_path, (char

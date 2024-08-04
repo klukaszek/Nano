@@ -258,15 +258,8 @@ static WGPUTextureView wgpu_get_resolve_view(void) {
     if (state.desc.sample_count > 1) {
         return wgpuSwapChainGetCurrentTextureView(state.swapchain);
     } else {
-        return NULL;
+        return 0;
     }
-}
-
-static const wgpu_swapchain_info_t wgpu_get_swapchain_info(void) {
-    return (wgpu_swapchain_info_t) {
-        .render_view = wgpu_get_render_view(),
-        .resolve_view = wgpu_get_resolve_view(),
-    };
 }
 
 static const void *wgpu_get_depth_stencil_view(void) {
@@ -976,6 +969,12 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
 }
 
 void wgpu_swapchain_discard(wgpu_state_t *state) {
+
+// Release any ImGui resources that depend on the swapchain
+#ifdef CIMGUI_WGPU
+    nano_cimgui_invalidate_device_objects();
+#endif
+
     if (state->msaa_view) {
         wgpuTextureViewRelease(state->msaa_view);
         state->msaa_view = 0;
@@ -1002,17 +1001,15 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
 // Normally this is called when we swap to MSAA or back to non-MSAA
 void wgpu_swapchain_reinit(wgpu_state_t *state) {
 
+#ifdef CIMGUI_WGPU
+    state->imgui_data->multiSampleCount = state->desc.sample_count;
+#endif
+
     // Release the old swapchain
     wgpu_swapchain_discard(state);
 
     // Reinitialize the swapchain
     wgpu_swapchain_init(state);
-
-#ifdef CIMGUI_WGPU
-    state->imgui_data->multiSampleCount = state->desc.sample_count;
-    nano_cimgui_invalidate_device_objects();
-    nano_cimgui_create_device_objects();
-#endif
 }
 
 void wgpu_stop(void) {

@@ -2122,11 +2122,7 @@ void nano_shader_execute(nano_shader_t *shader) {
                         &(WGPURenderPassColorAttachment){
                             .view = wgpu_get_render_view(),
                             .depthSlice = ~0u,
-                            .resolveTarget =
-                                nano_app.settings.gfx.msaa.sample_count > 1
-                                    ? wgpuSwapChainGetCurrentTextureView(
-                                          nano_app.wgpu->swapchain)
-                                    : NULL,
+                            .resolveTarget = wgpu_get_resolve_view(),
                             .loadOp = WGPULoadOp_Load,
                             .storeOp = WGPUStoreOp_Store,
                         },
@@ -2195,14 +2191,6 @@ static void nano_default_init(void) {
     // application with wgpu_start().
     nano_app.wgpu = wgpu_get_state();
 
-    // Once the device is created, we can create the default
-    // pipeline for rendering a simple screen quad with a texture
-
-    // TODO: The buffers and shaders for this pipeline should
-    // eventually be added to added to our buffer and shader pools
-    // accordingly
-    // wgpu_init_default_pipeline();
-
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
 
@@ -2241,7 +2229,7 @@ static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 // information and settings. This is a simple window that can be toggled on and
 // off. This is a simple example of how to use the ImGui API to create a window
 // for a Nano application.
-static void nano_demo_window(bool *show_debug) {
+static void nano_demo_window() {
 
     static bool show_demo = false;
     bool visible = true;
@@ -2260,7 +2248,8 @@ static void nano_demo_window(bool *show_debug) {
     // Attempt to create the window with window flags
     // If the window is not created, end the window and return
     // Otherwise, continue to create the window and add the contents
-    if (!igBegin("Nano Debug", show_debug, ImGuiWindowFlags_MenuBar)) {
+    if (!igBegin("Nano Debug", &nano_app.show_debug,
+                 ImGuiWindowFlags_MenuBar)) {
         igEnd();
         return;
     } else {
@@ -2595,14 +2584,15 @@ static void nano_draw_debug_ui() {
 
     // Necessary to call before starting a new imgui frame
     // this calls igNewFrame()
+    // This handles all the overhead needed to get a new imgui frame
     nano_cimgui_new_frame();
-
-    nano_demo_window(&nano_app.show_debug);
     
+    // Draw the demo window as part of this imgui frame
+    nano_demo_window();
+
     // Get the swapchain info for the current frame so we can
     // pass the info on to the nano_cimgui_end_frame() function
-    wgpu_swapchain_info_t swapchain_info = wgpu_get_swapchain_info();
-    nano_cimgui_end_frame(cmd_encoder, (const void *)&swapchain_info);
+    nano_cimgui_end_frame(cmd_encoder, wgpu_get_render_view, wgpu_get_resolve_view);
 
     // --------------------------
     // End of the Dear ImGui frame
@@ -2657,8 +2647,9 @@ static WGPUCommandEncoder nano_start_frame() {
                     .view = wgpu_get_render_view(),
                     .depthSlice = ~0u,
                     .resolveTarget = wgpu_get_resolve_view(),
-                    .loadOp = WGPULoadOp_Clear, // Clear the frame
-                    .storeOp = WGPUStoreOp_Store, // Store the clear value for the frame
+                    .loadOp = WGPULoadOp_Clear,   // Clear the frame
+                    .storeOp = WGPUStoreOp_Store, // Store the clear value for
+                                                  // the frame
                     .clearValue =
                         (WGPUColor){
                             .r = nano_app.wgpu->clear_color[0],
@@ -2670,14 +2661,13 @@ static WGPUCommandEncoder nano_start_frame() {
             .depthStencilAttachment = NULL,
         };
 
-        WGPURenderPassEncoder pass =
-            wgpuCommandEncoderBeginRenderPass(nano_app.wgpu->cmd_encoder, &render_pass_desc);
+        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(
+            nano_app.wgpu->cmd_encoder, &render_pass_desc);
         wgpuRenderPassEncoderEnd(pass);
     } // End of clear swapchain
 
     return nano_app.wgpu->cmd_encoder;
 }
-
 
 // Function called at the end of the frame to present the frame
 // and update the nano app state for the next frame.
@@ -2689,7 +2679,7 @@ static void nano_end_frame() {
     assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
     assert(nano_app.wgpu->cmd_encoder != NULL &&
            "Nano WGPU command encoder is NULL\n");
-    
+
     // Show the debug GUI for the Nano application
     if (nano_app.show_debug) {
         nano_draw_debug_ui();
@@ -2717,15 +2707,20 @@ static void nano_end_frame() {
 
     // Update the MSAA settings
     if (nano_app.settings.gfx.msaa.msaa_changed) {
-        igRender();
-        uint8_t current_item = nano_app.settings.gfx.msaa.msaa_index;
-        nano_app.settings.gfx.msaa.sample_count =
-            nano_app.settings.gfx.msaa.msaa_values[current_item];
-        nano_app.wgpu->desc.sample_count =
-            nano_app.settings.gfx.msaa.sample_count;
-        wgpu_swapchain_reinit(nano_app.wgpu);
-        nano_app.settings.gfx.msaa.msaa_changed = false;
-        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+        uint8_t current_item_id = nano_app.settings.gfx.msaa.msaa_index;
+        uint8_t current_item = nano_app.settings.gfx.msaa.msaa_values[current_item_id];
+        if (current_item ==
+            nano_app.settings.gfx.msaa.sample_count) {
+            nano_app.settings.gfx.msaa.msaa_changed = false;
+        } else {
+            nano_app.settings.gfx.msaa.sample_count =
+                current_item;
+            nano_app.wgpu->desc.sample_count =
+                current_item;
+            wgpu_swapchain_reinit(nano_app.wgpu);
+            nano_app.settings.gfx.msaa.msaa_changed = false;
+            nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+        }
     }
 
     // Update the font size if the flag is set
