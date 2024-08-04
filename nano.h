@@ -57,8 +57,10 @@
 //  NANO
 // -------------------------------------------------
 
+#ifndef NANO_H
+#define NANO_H
+
 #include "webgpu.h"
-#define CIMGUI_WGPU
 #include "wgpu_entry.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -66,8 +68,9 @@
 #include <webgpu/webgpu.h>
 #include <wgsl-parser.h>
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+    #include "nano_cimgui.h"
     #include <cimgui.h>
 #endif
 
@@ -1038,7 +1041,9 @@ void nano_set_font(int index) {
         LOG_ERR("NANO: nano_set_font() -> Font is NULL\n");
         return;
     }
-
+    
+    LOG("NANO: Setting font to %s\n",
+        nano_app.font_info.fonts[index].name);
     ImGuiIO *io = igGetIO();
 
     // Set the font as the default font
@@ -1483,6 +1488,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                 {
                     .module = shader_module,
                     .entryPoint = info->entry_points[vertex_index].entry,
+                    .bufferCount = 0,
                     .buffers = NULL,
                     // TODO: Add other vertex attributes here
                 },
@@ -1503,7 +1509,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                     .targetCount = 1,
                     .targets =
                         &(WGPUColorTargetState){
-                            .format = WGPUTextureFormat_BGRA8UnormSrgb,
+                            .format = wgpu_get_color_format(),
                             .blend =
                                 &(WGPUBlendState){
                                     .color =
@@ -2050,11 +2056,12 @@ WGPURenderPipeline nano_get_render_pipeline(nano_shader_t *shader) {
 // to a struct in memory.
 void nano_shader_execute(nano_shader_t *shader) {
     if (shader == NULL) {
-        LOG_ERR("NANO: nano_execute_shader() -> Shader is NULL\n");
+        LOG_ERR("NANO: nano_shader_execute() -> Shader is NULL\n");
         return;
     }
     if (!shader->in_use) {
-        LOG_ERR("NANO: Shader %u is not active\n", shader->id);
+        LOG_ERR("NANO: nano_shader_execute() -> Shader %u is not active\n",
+                shader->id);
         return;
     }
 
@@ -2114,18 +2121,40 @@ void nano_shader_execute(nano_shader_t *shader) {
             // sure the same render pass is not queued multiple times.
             if (!render_pass_queued) {
 
-                // LOG("DEMO: Render pass not yet implemented!\n");
-                // WGPURenderPassEncoder render_pass =
-                //     wgpuCommandEncoderBeginRenderPass(command_encoder, NULL);
-                // wgpuRenderPassEncoderSetPipeline(render_pass,
-                //                                  shader->render_pipeline);
-                //
-                // // Assign the bind groups for the render pass
-                // for (int j = 0; j < shader->layout.num_layouts; j++) {
-                //     wgpuRenderPassEncoderSetBindGroup(
-                //         render_pass, j, nano_get_bindgroup(shader, j), 0,
-                //         NULL);
-                // }
+                WGPURenderPassDescriptor render_pass_desc = {
+                    .colorAttachmentCount = 1,
+                    .colorAttachments =
+                        &(WGPURenderPassColorAttachment){
+                            .view = wgpu_get_render_view(),
+                            .depthSlice = ~0u,
+                            .resolveTarget = wgpu_get_resolve_view(),
+                            .loadOp = WGPULoadOp_Load,
+                            .storeOp = WGPUStoreOp_Store,
+                        },
+                    .depthStencilAttachment = NULL,
+                };
+
+                WGPURenderPassEncoder render_pass =
+                    wgpuCommandEncoderBeginRenderPass(command_encoder,
+                                                      &render_pass_desc);
+                wgpuRenderPassEncoderSetPipeline(render_pass,
+                                                 shader->render_pipeline);
+
+                // Assign the bind groups for the render pass
+                for (int j = 0; j < shader->layout.num_layouts; j++) {
+                    wgpuRenderPassEncoderSetBindGroup(
+                        render_pass, j, nano_get_bindgroup(shader, j), 0, NULL);
+                }
+
+                wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
+                wgpuRenderPassEncoderEnd(render_pass);
+
+                // submit the command buffer that contains the render pass
+                WGPUCommandBuffer command_buffer =
+                    wgpuCommandEncoderFinish(command_encoder, NULL);
+                wgpuQueueSubmit(queue, 1, &command_buffer);
+
+                LOG("NANO: Render pass queued for shader %u\n", shader->id);
 
                 render_pass_queued = true;
             }
@@ -2167,14 +2196,6 @@ static void nano_default_init(void) {
     // application with wgpu_start().
     nano_app.wgpu = wgpu_get_state();
 
-    // Once the device is created, we can create the default
-    // pipeline for rendering a simple screen quad with a texture
-
-    // TODO: The buffers and shaders for this pipeline should
-    // eventually be added to added to our buffer and shader pools
-    // accordingly
-    wgpu_init_default_pipeline();
-
     // Set the fonts
     nano_init_fonts(&nano_fonts, 16.0f);
 
@@ -2209,11 +2230,19 @@ static void nano_default_cleanup(void) {
 // the event
 static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 
+#ifdef NANO_CIMGUI
+
 // This represents the demo window that has all of the Nano application
 // information and settings. This is a simple window that can be toggled on and
 // off. This is a simple example of how to use the ImGui API to create a window
 // for a Nano application.
-static void nano_demo_window(bool *show_debug) {
+static void nano_draw_debug_ui() {
+
+    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
+    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
+    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
+    assert(nano_app.wgpu->cmd_encoder != NULL &&
+           "Nano WGPU command encoder is NULL\n");
 
     static bool show_demo = false;
     bool visible = true;
@@ -2232,7 +2261,8 @@ static void nano_demo_window(bool *show_debug) {
     // Attempt to create the window with window flags
     // If the window is not created, end the window and return
     // Otherwise, continue to create the window and add the contents
-    if (!igBegin("Nano Debug", show_debug, ImGuiWindowFlags_MenuBar)) {
+    if (!igBegin("Nano Debug", &nano_app.show_debug,
+                 ImGuiWindowFlags_MenuBar)) {
         igEnd();
         return;
     } else {
@@ -2538,10 +2568,8 @@ static void nano_demo_window(bool *show_debug) {
         igBullet();
 
         // Set the clear color for the frame
-        igSliderFloat4(
-            "RGBA Clear",
-            (float *)&nano_app.wgpu->default_pipeline_info.clear_color, 0.0f,
-            1.0f, "%.2f", 0);
+        igSliderFloat4("RGBA Clear", (float *)&nano_app.wgpu->clear_color, 0.0f,
+                       1.0f, "%.2f", 0);
 
         // Button to open the ImGui demo window
         igSeparatorEx(ImGuiSeparatorFlags_Horizontal, 5.0f);
@@ -2555,100 +2583,7 @@ static void nano_demo_window(bool *show_debug) {
     }
 }
 
-// A function that draws a CImGui frame of the current nano_app
-// state Include collapsibles for all nested structs
-static void nano_draw_debug_ui() {
-
-    WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
-
-    // Necessary to call before starting a new frame
-    // Will be refactored into a proper nano_cimgui_* function
-    ImGui_ImplWGPU_NewFrame();
-    igNewFrame();
-
-    // Show the debug GUI for the Nano application
-    if (nano_app.show_debug) {
-        nano_demo_window(&nano_app.show_debug);
-    }
-
-    // Create the draw data for the ImGui frame
-    igRender();
-
-    float *clear_color =
-        (float *)&nano_app.wgpu->default_pipeline_info.clear_color;
-
-    // Write the uniform buffer with the clear color for the frame
-    wgpuQueueWriteBuffer(
-        wgpuDeviceGetQueue(nano_app.wgpu->device),
-        nano_app.wgpu->default_pipeline_info.uniform_buffer, 0,
-        &nano_app.wgpu->default_pipeline_info.clear_color,
-        sizeof(nano_app.wgpu->default_pipeline_info.clear_color));
-
-    // Set the ImGui encoder to our current encoder
-    // This is necessary to render the ImGui draw data
-    ImGui_ImplWGPU_SetEncoder(cmd_encoder);
-
-    // --------------------------
-    // End of the Dear ImGui frame
-
-    // Get the current swapchain texture view
-    WGPUTextureView back_buffer_view = wgpu_get_render_view();
-    if (!back_buffer_view) {
-        LOG_ERR("Failed to get current swapchain texture view.\n");
-        return;
-    }
-
-    // Create a generic render pass color attachment
-    WGPURenderPassColorAttachment color_attachment = {
-        .view = back_buffer_view,
-        // We set the depth slice to 0xFFFFFFFF to indicate that the
-        // depth slice is not used.
-        .depthSlice = ~0u,
-        // If our view is a texture view (MSAA Samples > 1), we need
-        // to resolve the texture to the swapchain texture
-        .resolveTarget =
-            nano_app.settings.gfx.msaa.sample_count > 1
-                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
-                : NULL,
-        .loadOp = WGPULoadOp_Clear,
-        .storeOp = WGPUStoreOp_Store,
-        .clearValue = {.r = clear_color[0],
-                       .g = clear_color[1],
-                       .b = clear_color[2],
-                       .a = clear_color[3]},
-    };
-
-    WGPURenderPassDescriptor render_pass_desc = {
-        .label = "Nano Debug Render Pass",
-        .colorAttachmentCount = 1,
-        .colorAttachments = &color_attachment,
-        .depthStencilAttachment = NULL,
-    };
-
-    WGPURenderPassEncoder render_pass =
-        wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
-    if (!render_pass) {
-        LOG_ERR("NANO: Failed to begin default render pass encoder.\n");
-        wgpuCommandEncoderRelease(cmd_encoder);
-        return;
-    }
-
-    // Set our render pass encoder to use our pipeline and
-    wgpuRenderPassEncoderSetBindGroup(
-        render_pass, 0, nano_app.wgpu->default_pipeline_info.bind_group, 0,
-        NULL);
-    wgpuRenderPassEncoderSetPipeline(
-        render_pass, nano_app.wgpu->default_pipeline_info.pipeline);
-    wgpuRenderPassEncoderDraw(render_pass, 3, 1, 0, 0);
-
-    // Render ImGui Draw Data
-    // This will be refactored into a nano_cimgui_render function
-    // I am thinking of making all nano + cimgui functionality
-    // optional using macros
-    ImGui_ImplWGPU_RenderDrawData(igGetDrawData(), render_pass);
-
-    wgpuRenderPassEncoderEnd(render_pass);
-}
+#endif
 
 // -------------------------------------------------------------------------------
 // Nano Frame Update Functions
@@ -2665,7 +2600,7 @@ static WGPUCommandEncoder nano_start_frame() {
     // Update the dimensions of the window
     nano_app.wgpu->width = wgpu_width();
     nano_app.wgpu->height = wgpu_height();
-
+    
     // Set the display size for ImGui
     ImGuiIO *io = igGetIO();
     io->DisplaySize =
@@ -2674,6 +2609,7 @@ static WGPUCommandEncoder nano_start_frame() {
     // Get the frame time and calculate the frames per second with
     // delta time
     nano_app.frametime = wgpu_frametime();
+
     // Calculate the frames per second
     nano_app.fps = 1000 / nano_app.frametime;
 
@@ -2689,13 +2625,65 @@ static WGPUCommandEncoder nano_start_frame() {
     nano_app.wgpu->cmd_encoder = wgpuDeviceCreateCommandEncoder(
         nano_app.wgpu->device, &cmd_encoder_desc);
 
+    // Clear the swapchain with a color at the start of the frame
+    {
+        WGPURenderPassDescriptor render_pass_desc = {
+            .colorAttachmentCount = 1,
+            .colorAttachments =
+                &(WGPURenderPassColorAttachment){
+                    .view = wgpu_get_render_view(),
+                    .depthSlice = ~0u,
+                    .resolveTarget = wgpu_get_resolve_view(),
+                    .loadOp = WGPULoadOp_Clear,   // Clear the frame
+                    .storeOp = WGPUStoreOp_Store, // Store the clear value for
+                                                  // the frame
+                    .clearValue =
+                        (WGPUColor){
+                            .r = nano_app.wgpu->clear_color[0],
+                            .g = nano_app.wgpu->clear_color[1],
+                            .b = nano_app.wgpu->clear_color[2],
+                            .a = nano_app.wgpu->clear_color[3],
+                        },
+                },
+            .depthStencilAttachment = NULL,
+        };
+
+        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(
+            nano_app.wgpu->cmd_encoder, &render_pass_desc);
+        wgpuRenderPassEncoderEnd(pass);
+    } // End of clear swapchain
+
+// Start the ImGui frame if nano_cimgui is enabled
+#ifdef NANO_CIMGUI
+    nano_cimgui_new_frame();
+#endif
+
     return nano_app.wgpu->cmd_encoder;
 }
 
+// Function called at the end of the frame to present the frame
+// and update the nano app state for the next frame.
+// This method should be called after nano_start_frame().
 static void nano_end_frame() {
 
-    // Draw the debug UI
-    nano_draw_debug_ui();
+    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
+    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
+    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
+    assert(nano_app.wgpu->cmd_encoder != NULL &&
+           "Nano WGPU command encoder is NULL\n");
+
+// If nano_cimgui is enabled, draw the debug UI if needed
+// and end the ImGui frame so we can render the ImGuiDrawData
+#ifdef NANO_CIMGUI
+    if (nano_app.show_debug) {
+        nano_draw_debug_ui();
+    }
+
+    // We pass our command encoder to nano_cimgui to render the ImGuiDrawData
+    // onto the frame
+    nano_cimgui_end_frame(nano_app.wgpu->cmd_encoder, wgpu_get_render_view,
+                          wgpu_get_resolve_view);
+#endif
 
     // Create a command buffer so that we can submit the command
     // encoder
@@ -2719,14 +2707,18 @@ static void nano_end_frame() {
 
     // Update the MSAA settings
     if (nano_app.settings.gfx.msaa.msaa_changed) {
-        uint8_t current_item = nano_app.settings.gfx.msaa.msaa_index;
-        nano_app.settings.gfx.msaa.sample_count =
-            nano_app.settings.gfx.msaa.msaa_values[current_item];
-        nano_app.wgpu->desc.sample_count =
-            nano_app.settings.gfx.msaa.sample_count;
-        wgpu_swapchain_reinit(nano_app.wgpu);
-        nano_app.settings.gfx.msaa.msaa_changed = false;
-        nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+        uint8_t current_item_id = nano_app.settings.gfx.msaa.msaa_index;
+        uint8_t current_item =
+            nano_app.settings.gfx.msaa.msaa_values[current_item_id];
+        if (current_item == nano_app.settings.gfx.msaa.sample_count) {
+            nano_app.settings.gfx.msaa.msaa_changed = false;
+        } else {
+            nano_app.settings.gfx.msaa.sample_count = current_item;
+            nano_app.wgpu->desc.sample_count = current_item;
+            wgpu_swapchain_reinit(nano_app.wgpu);
+            nano_app.settings.gfx.msaa.msaa_changed = false;
+            nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
+        }
     }
 
     // Update the font size if the flag is set
@@ -2734,3 +2726,5 @@ static void nano_end_frame() {
         nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
     }
 }
+
+#endif // NANO_H

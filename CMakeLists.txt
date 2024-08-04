@@ -6,6 +6,7 @@ set(CMAKE_EXECUTABLE_SUFFIX ".html")
 # Define the source files
 set(SOURCES
     nano.h
+    include/nano_cimgui.h
 )
 
 # Add the include directory so that any dependencies can be compiled

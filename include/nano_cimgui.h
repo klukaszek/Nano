@@ -1,7 +1,8 @@
-#ifndef CIMGUI_IMPL_WGPU_H
+#ifndef NANO_CIMGUI_IMPL
 
-#define CIMGUI_IMPL_WGPU_H
+#define NANO_CIMGUI_IMPL
 #include "emscripten/emscripten.h"
+#include "emscripten/html5.h"
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
 #include <assert.h>
@@ -25,7 +26,7 @@
 // ----------------------------------------------------------------------------
 
 // WGPU CImGUI Shaders
-static const char *__shader_vert_wgsl =
+const char *__shader_vert_wgsl =
     "struct VertexInput {\n"
     "    @location(0) position: vec2<f32>,\n"
     "    @location(1) uv: vec2<f32>,\n"
@@ -49,7 +50,7 @@ static const char *__shader_vert_wgsl =
     "    return out;\n"
     "}\n";
 
-static const char *__shader_frag_wgsl =
+const char *__shader_frag_wgsl =
     "struct VertexOutput {\n"
     "    @builtin(position) position: vec4<f32>,\n"
     "    @location(0) color: vec4<f32>,\n"
@@ -191,17 +192,18 @@ typedef enum {
 // ----------------------------------------------------------------------------
 
 // Structures
-typedef struct ImGui_ImplWGPU_Data {
+typedef struct nano_cimgui_data {
 
     ImGuiContext *imguiContext;
     WGPUDevice wgpuDevice;
     WGPUQueue defaultQueue;
+    WGPUCommandEncoder cmdEncoder;
     WGPUTextureFormat renderTargetFormat;
     WGPUTextureFormat depthStencilFormat;
     uint32_t numFramesInFlight;
     uint32_t frameIndex;
     float deltaTime;
-    uint32_t multiSampleCount;
+    uint8_t multiSampleCount;
 
     // Key States
     double LastKeyPressTime[512];
@@ -221,56 +223,55 @@ typedef struct ImGui_ImplWGPU_Data {
     WGPUBuffer IndexBuffer;
     uint32_t VertexBufferSize;
     uint32_t IndexBufferSize;
-} ImGui_ImplWGPU_Data;
+} nano_cimgui_data;
 
 // ----------------------------------------------------------------------------
 
 // Forward declarations
-static inline ImGui_ImplWGPU_Data *
-ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
-                    WGPUTextureFormat render_target_format,
-                    WGPUTextureFormat depth_stencil_format, float res_X,
-                    float res_Y, float width, float height,
-                    uint32_t multiSampleCount, ImGuiContext *ctx);
-static inline void ImGui_ImplWGPU_Shutdown(void);
-static inline void ImGui_ImplWGPU_NewFrame(void);
-static inline void
-ImGui_ImplWGPU_RenderDrawData(ImDrawData *draw_data,
-                              WGPURenderPassEncoder pass_encoder);
-static inline bool ImGui_ImplWGPU_CreateDeviceObjects();
-static inline void ImGui_ImplWGPU_InvalidateDeviceObjects(void);
-static inline WGPUShaderModule
-ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device, const char *source);
-static inline bool ImGui_ImplWGPU_CreateFontsTexture(void);
-static inline void ImGui_ImplWGPU_SetEncoder(WGPUCommandEncoder encoder);
-static inline void ImGui_ImplWGPU_ProcessKeyEvent(int key, bool down);
+nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
+                                   WGPUTextureFormat render_target_format,
+                                   WGPUTextureFormat depth_stencil_format,
+                                   float res_X, float res_Y, float width,
+                                   float height, uint32_t multiSampleCount,
+                                   ImGuiContext *ctx);
+void nano_cimgui_shutdown(void);
+void nano_cimgui_new_frame(void);
+void nano_cimgui_set_encoder(WGPUCommandEncoder encoder);
+void nano_cimgui_render_draw_data(ImDrawData *draw_data,
+                                  WGPURenderPassEncoder pass_encoder);
+void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                           WGPUTextureView (*get_render_view)(void),
+                           WGPUTextureView (*get_resolve_view)(void));
+bool nano_cimgui_create_device_objects();
+void nano_cimgui_invalidate_device_objects(void);
+WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
+                                                  const char *source);
+bool nano_cimgui_create_font_textures(void);
+void nano_cimgui_process_key_event(int key, bool down);
 // Don't use this if you aren't using my WGPU backend
-static inline ImGuiKey ImGui_ImplWGPU_KeycodeToImGuiKey(int keycode);
-static inline void ImGui_ImplWGPU_ProcessCharEvent(unsigned int c);
-static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta);
-static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
-                                                          bool down);
-static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y);
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y,
-                                                  float width, float height);
+ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode);
+void nano_cimgui_process_char_event(unsigned int c);
+void nano_cimgui_process_mousewheel_event(float delta);
+void nano_cimgui_process_mousepress_event(int button, bool down);
+void nano_cimgui_process_mousepos_event(float x, float y);
+void nano_cimgui_scale_to_canvas(float res_x, float res_y, float width,
+                                 float height);
+
+bool cimgui_ready = false;
 
 // Function Implementations
 // ----------------------------------------------------------------------------
 
 // Helper function to retrieve the backend data
-static inline ImGui_ImplWGPU_Data *ImGui_ImplWGPU_GetBackendData(void) {
-    return (ImGui_ImplWGPU_Data *)igGetIO()->BackendRendererUserData;
-}
-
-// Set the default command encoder for the WGPU backend
-static inline void ImGui_ImplWGPU_SetEncoder(WGPUCommandEncoder encoder) {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
-    bd->DefaultCommandEncoder = encoder;
+nano_cimgui_data *nano_cimgui_get_backend_data(void) {
+    if (!cimgui_ready)
+        return NULL;
+    return (nano_cimgui_data *)igGetIO()->BackendRendererUserData;
 }
 
 // Create a shader module from WGSL source code
-static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device,
-                                                          const char *source) {
+WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
+                                                  const char *source) {
     // Set up the WGSL shader descriptor
     WGPUShaderModuleWGSLDescriptor wgsl_desc = {
         .chain =
@@ -284,15 +285,17 @@ static WGPUShaderModule ImGui_ImplWGPU_CreateShaderModule(WGPUDevice device,
 }
 
 // Initialize the WGPU backend for ImGui
-static inline ImGui_ImplWGPU_Data *
-ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
-                    WGPUTextureFormat render_target_format,
-                    WGPUTextureFormat depth_stencil_format, float res_x,
-                    float res_y, float width, float height,
-                    uint32_t multiSampleCount, ImGuiContext *ctx) {
+nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
+                                   WGPUTextureFormat render_target_format,
+                                   WGPUTextureFormat depth_stencil_format,
+                                   float res_x, float res_y, float width,
+                                   float height, uint32_t multiSampleCount,
+                                   ImGuiContext *ctx) {
 
     if (ctx == NULL) {
         ctx = igCreateContext(NULL);
+        if (ctx == NULL)
+            return NULL;
         igSetCurrentContext(ctx);
     } else {
         igSetCurrentContext(ctx);
@@ -315,13 +318,13 @@ ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
     io->BackendPlatformName = "cimgui_impl_webgpu";
 
     // Allocate and initialize backend data
-    ImGui_ImplWGPU_Data *bd =
-        (ImGui_ImplWGPU_Data *)IM_ALLOC(sizeof(ImGui_ImplWGPU_Data));
+    nano_cimgui_data *bd =
+        (nano_cimgui_data *)IM_ALLOC(sizeof(nano_cimgui_data));
     if (bd == NULL)
         return NULL;
-    
+
     bd->imguiContext = ctx;
-    memset(bd, 0, sizeof(ImGui_ImplWGPU_Data));
+    memset(bd, 0, sizeof(nano_cimgui_data));
     memset(bd->LastKeyPressTime, 0, sizeof(bd->LastKeyPressTime));
     memset(bd->KeyDown, 0, sizeof(bd->KeyDown));
     bd->KeyRepeatDelay = 0.5; // Delay before key repeat starts
@@ -347,20 +350,22 @@ ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight,
     bd->IndexBufferSize = 10000;
 
     // Set up ImGui style scaling
-    ImGui_ImplWGPU_ScaleUIToCanvas(res_x, res_y, width, height);
+    nano_cimgui_scale_to_canvas(res_x, res_y, width, height);
+    
+    cimgui_ready = true;
 
     return bd;
 }
 
 // Shutdown the WGPU backend
-inline void ImGui_ImplWGPU_Shutdown(void) {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
+void nano_cimgui_shutdown(void) {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     IM_ASSERT(bd != NULL &&
               "No renderer backend to shutdown, or already shutdown?");
     ImGuiIO *io = igGetIO();
 
     // Invalidate device objects
-    ImGui_ImplWGPU_InvalidateDeviceObjects();
+    nano_cimgui_invalidate_device_objects();
 
     // Release resources
     wgpuQueueRelease(bd->defaultQueue);
@@ -376,9 +381,9 @@ inline void ImGui_ImplWGPU_Shutdown(void) {
 }
 
 // Prepare for a new frame
-inline void ImGui_ImplWGPU_NewFrame(void) {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
-    IM_ASSERT(bd != NULL && "Did you call ImGui_ImplWGPU_Init()?");
+void nano_cimgui_new_frame(void) {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
+    IM_ASSERT(bd != NULL && "Did you call nano_cimgui_init()?");
 
     ImGuiIO *io = igGetIO();
 
@@ -387,29 +392,235 @@ inline void ImGui_ImplWGPU_NewFrame(void) {
     emscripten_get_canvas_element_size("#canvas", &width, &height);
     io->DisplaySize = (ImVec2){(float)width, (float)height};
 
-    // Update time step (targeting 60 FPS)
+    // Update time step (targeting 144 FPS MAX for ImGui)
     double current_time = emscripten_get_now() / 1000.0;
     io->DeltaTime = bd->deltaTime ? (float)(current_time - bd->deltaTime)
-                                  : (float)(1.0f / 60.0f);
+                                  : (float)(1.0f / 144.0f);
     bd->deltaTime = current_time;
 
     // Create device objects if not already created
-    ImGui_ImplWGPU_CreateDeviceObjects();
+    nano_cimgui_create_device_objects();
+
+    // Start new frame
+    igNewFrame();
+}
+
+// Set the default command encoder for the WGPU backend
+void nano_cimgui_set_encoder(WGPUCommandEncoder encoder) {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
+    bd->DefaultCommandEncoder = encoder;
+}
+
+// Handle rendering of ImGui's draw data using an existing WGPURenderPassEncoder
+void nano_cimgui_render_draw_data(ImDrawData *draw_data,
+                                  WGPURenderPassEncoder pass_encoder) {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
+
+    // Avoid rendering when minimized
+    if (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f)
+        return;
+
+    // Create and grow vertex/index buffers if needed
+    size_t vertex_size =
+        ((size_t)draw_data->TotalVtxCount * sizeof(ImDrawVert) + 3) & ~3;
+    size_t index_size =
+        ((size_t)draw_data->TotalIdxCount * sizeof(ImDrawIdx) + 3) & ~3;
+
+    // Resize vertex buffer if necessary
+    if (bd->VertexBuffer == NULL ||
+        bd->VertexBufferSize < draw_data->TotalVtxCount) {
+        if (bd->VertexBuffer) {
+            wgpuBufferDestroy(bd->VertexBuffer);
+        }
+        bd->VertexBufferSize = draw_data->TotalVtxCount + 5000;
+        WGPUBufferDescriptor vb_desc = {
+            .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
+            .size =
+                ((size_t)bd->VertexBufferSize * sizeof(ImDrawVert) + 3) & ~3,
+            .label = "Dear ImGui Vertex Buffer"};
+        bd->VertexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &vb_desc);
+    }
+
+    // Resize index buffer if necessary
+    if (bd->IndexBuffer == NULL ||
+        bd->IndexBufferSize < draw_data->TotalIdxCount) {
+        if (bd->IndexBuffer) {
+            wgpuBufferDestroy(bd->IndexBuffer);
+        }
+        bd->IndexBufferSize = draw_data->TotalIdxCount + 10000;
+        WGPUBufferDescriptor ib_desc = {
+            .usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
+            .size = ((size_t)bd->IndexBufferSize * sizeof(ImDrawIdx) + 3) & ~3,
+            .label = "Dear ImGui Index Buffer"};
+        bd->IndexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ib_desc);
+    }
+
+    // Upload vertex/index data
+    ImDrawVert *vtx_dst = (ImDrawVert *)malloc(vertex_size);
+    ImDrawIdx *idx_dst = (ImDrawIdx *)malloc(index_size);
+    ImDrawVert *vtx_ptr = vtx_dst;
+    ImDrawIdx *idx_ptr = idx_dst;
+
+    // Copy vertex and index data from all command lists
+    for (int n = 0; n < draw_data->CmdListsCount; n++) {
+        const ImDrawList *cmd_list = draw_data->CmdLists.Data[n];
+        memcpy(vtx_ptr, cmd_list->VtxBuffer.Data,
+               cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
+        memcpy(idx_ptr, cmd_list->IdxBuffer.Data,
+               cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+        vtx_ptr += cmd_list->VtxBuffer.Size;
+        idx_ptr += cmd_list->IdxBuffer.Size;
+    }
+
+    // Write vertex and index data to GPU buffers
+    wgpuQueueWriteBuffer(bd->defaultQueue, bd->VertexBuffer, 0, vtx_dst,
+                         vertex_size);
+    wgpuQueueWriteBuffer(bd->defaultQueue, bd->IndexBuffer, 0, idx_dst,
+                         index_size);
+
+    // Free temporary buffers
+    free(vtx_dst);
+    free(idx_dst);
+
+    // Setup orthographic projection matrix
+    float L = draw_data->DisplayPos.x;
+    float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
+    float T = draw_data->DisplayPos.y;
+    float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
+    float mvp[4][4] = {
+        {2.0f / (R - L), 0.0f, 0.0f, 0.0f},
+        {0.0f, 2.0f / (T - B), 0.0f, 0.0f},
+        {0.0f, 0.0f, 0.5f, 0.0f},
+        {(R + L) / (L - R), (T + B) / (B - T), 0.5f, 1.0f},
+    };
+    wgpuQueueWriteBuffer(bd->defaultQueue, bd->Uniforms, 0, mvp, sizeof(mvp));
+
+    // Setup render state
+    wgpuRenderPassEncoderSetPipeline(pass_encoder, bd->PipelineState);
+    wgpuRenderPassEncoderSetBindGroup(pass_encoder, 0, bd->CommonBindGroup, 0,
+                                      NULL);
+    wgpuRenderPassEncoderSetVertexBuffer(pass_encoder, 0, bd->VertexBuffer, 0,
+                                         WGPU_WHOLE_SIZE);
+    wgpuRenderPassEncoderSetIndexBuffer(pass_encoder, bd->IndexBuffer,
+                                        sizeof(ImDrawIdx) == 2
+                                            ? WGPUIndexFormat_Uint16
+                                            : WGPUIndexFormat_Uint32,
+                                        0, WGPU_WHOLE_SIZE);
+
+    // Render command lists
+    size_t global_vtx_offset = 0;
+    size_t global_idx_offset = 0;
+    ImVec2 clip_off = draw_data->DisplayPos;
+    for (int n = 0; n < draw_data->CmdListsCount; n++) {
+        const ImDrawList *cmd_list = draw_data->CmdLists.Data[n];
+        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
+            const ImDrawCmd *pcmd = &cmd_list->CmdBuffer.Data[cmd_i];
+            if (pcmd->UserCallback) {
+                pcmd->UserCallback(cmd_list, pcmd);
+            } else {
+                // Project scissor/clipping rectangles into framebuffer space
+                ImVec2 clip_min = {pcmd->ClipRect.x - clip_off.x,
+                                   pcmd->ClipRect.y - clip_off.y};
+                ImVec2 clip_max = {pcmd->ClipRect.z - clip_off.x,
+                                   pcmd->ClipRect.w - clip_off.y};
+                if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+                    continue;
+
+                // Apply scissor/clipping rectangle
+                wgpuRenderPassEncoderSetScissorRect(
+                    pass_encoder, (uint32_t)clip_min.x, (uint32_t)clip_min.y,
+                    (uint32_t)(clip_max.x - clip_min.x),
+                    (uint32_t)(clip_max.y - clip_min.y));
+
+                // Draw
+                wgpuRenderPassEncoderDrawIndexed(
+                    pass_encoder, pcmd->ElemCount, 1,
+                    pcmd->IdxOffset + global_idx_offset,
+                    pcmd->VtxOffset + global_vtx_offset, 0);
+            }
+        }
+        global_idx_offset += cmd_list->IdxBuffer.Size;
+        global_vtx_offset += cmd_list->VtxBuffer.Size;
+    }
+}
+
+typedef struct nano_cimgui_swapchain_info {
+    WGPUTextureView render_view;
+    WGPUTextureView resolve_view;
+} nano_cimgui_swapchain_info;
+
+// End the frame, create the render data and render pass.
+// This function requires a command encoder and swapchain info that contains the
+// render and resolve views. This function calls nano_cimgui_render_draw_data()
+// to render the ImGui draw data on the render pass created in this function.
+void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                           WGPUTextureView (*get_render_view)(void),
+                           WGPUTextureView (*get_resolve_view)(void)) {
+    assert(cmd_encoder != NULL && "Command encoder was NULL");
+
+    // Get data from the swapchain info
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
+
+    igRender();
+    if (igGetDrawData() == NULL)
+        return;
+
+    // Set the ImGui encoder to our current encoder
+    // This is necessary to render the ImGui draw data
+    nano_cimgui_set_encoder(cmd_encoder);
+
+    // Create a generic render pass color attachment
+    WGPURenderPassColorAttachment color_attachment = {
+        .view = get_render_view(),
+        // We set the depth slice to 0xFFFFFFFF to indicate that the
+        // depth slice is not used.
+        .depthSlice = ~0u,
+        // If our view is a texture view (MSAA Samples > 1), we need
+        // to resolve the texture to the swapchain texture (this is
+        // resolved in resolve_view)
+        .resolveTarget = get_resolve_view(),
+        .loadOp = WGPULoadOp_Load,
+        .storeOp = WGPUStoreOp_Store,
+    };
+
+    WGPURenderPassDescriptor render_pass_desc = {
+        .label = "Nano Debug Render Pass",
+        .colorAttachmentCount = 1,
+        .colorAttachments = &color_attachment,
+        .depthStencilAttachment = NULL,
+    };
+
+    WGPURenderPassEncoder render_pass =
+        wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
+    if (!render_pass) {
+        ILOG("nano_cimgui_end_frame() -> Failed to begin default render pass "
+             "encoder.\n");
+        wgpuCommandEncoderRelease(cmd_encoder);
+        return;
+    }
+
+    // Render ImGui Draw Data
+    // This will be refactored into a nano_cimgui_render function
+    // I am thinking of making all nano + cimgui functionality
+    // optional using macros
+    nano_cimgui_render_draw_data(igGetDrawData(), render_pass);
+
+    wgpuRenderPassEncoderEnd(render_pass);
 }
 
 // Create WGPU device objects (pipeline, buffers, textures, etc.)
-static inline bool ImGui_ImplWGPU_CreateDeviceObjects() {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
+bool nano_cimgui_create_device_objects() {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     if (!bd->wgpuDevice)
         return false;
     if (bd->PipelineState)
-        ImGui_ImplWGPU_InvalidateDeviceObjects();
+        nano_cimgui_invalidate_device_objects();
 
     // Create vertex and fragment shaders
     WGPUShaderModule vert_module =
-        ImGui_ImplWGPU_CreateShaderModule(bd->wgpuDevice, __shader_vert_wgsl);
+        nano_cimgui_create_shader_module(bd->wgpuDevice, __shader_vert_wgsl);
     WGPUShaderModule frag_module =
-        ImGui_ImplWGPU_CreateShaderModule(bd->wgpuDevice, __shader_frag_wgsl);
+        nano_cimgui_create_shader_module(bd->wgpuDevice, __shader_frag_wgsl);
 
     // Create pipeline layout
     WGPUBindGroupLayoutEntry bg_entries[3] = {
@@ -528,146 +739,15 @@ static inline bool ImGui_ImplWGPU_CreateDeviceObjects() {
     wgpuShaderModuleRelease(frag_module);
 
     // Create font texture
-    if (!ImGui_ImplWGPU_CreateFontsTexture())
+    if (!nano_cimgui_create_font_textures())
         return false;
 
     return bd->PipelineState != NULL;
 }
 
-static inline void
-ImGui_ImplWGPU_RenderDrawData(ImDrawData *draw_data,
-                              WGPURenderPassEncoder pass_encoder) {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
-
-    // Avoid rendering when minimized
-    if (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f)
-        return;
-
-    // Create and grow vertex/index buffers if needed
-    size_t vertex_size =
-        ((size_t)draw_data->TotalVtxCount * sizeof(ImDrawVert) + 3) & ~3;
-    size_t index_size =
-        ((size_t)draw_data->TotalIdxCount * sizeof(ImDrawIdx) + 3) & ~3;
-
-    // Resize vertex buffer if necessary
-    if (bd->VertexBuffer == NULL ||
-        bd->VertexBufferSize < draw_data->TotalVtxCount) {
-        if (bd->VertexBuffer) {
-            wgpuBufferDestroy(bd->VertexBuffer);
-        }
-        bd->VertexBufferSize = draw_data->TotalVtxCount + 5000;
-        WGPUBufferDescriptor vb_desc = {
-            .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
-            .size =
-                ((size_t)bd->VertexBufferSize * sizeof(ImDrawVert) + 3) & ~3};
-        bd->VertexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &vb_desc);
-    }
-
-    // Resize index buffer if necessary
-    if (bd->IndexBuffer == NULL ||
-        bd->IndexBufferSize < draw_data->TotalIdxCount) {
-        if (bd->IndexBuffer) {
-            wgpuBufferDestroy(bd->IndexBuffer);
-        }
-        bd->IndexBufferSize = draw_data->TotalIdxCount + 10000;
-        WGPUBufferDescriptor ib_desc = {
-            .usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
-            .size = ((size_t)bd->IndexBufferSize * sizeof(ImDrawIdx) + 3) & ~3};
-        bd->IndexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ib_desc);
-    }
-
-    // Upload vertex/index data
-    ImDrawVert *vtx_dst = (ImDrawVert *)malloc(vertex_size);
-    ImDrawIdx *idx_dst = (ImDrawIdx *)malloc(index_size);
-    ImDrawVert *vtx_ptr = vtx_dst;
-    ImDrawIdx *idx_ptr = idx_dst;
-
-    // Copy vertex and index data from all command lists
-    for (int n = 0; n < draw_data->CmdListsCount; n++) {
-        const ImDrawList *cmd_list = draw_data->CmdLists.Data[n];
-        memcpy(vtx_ptr, cmd_list->VtxBuffer.Data,
-               cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
-        memcpy(idx_ptr, cmd_list->IdxBuffer.Data,
-               cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
-        vtx_ptr += cmd_list->VtxBuffer.Size;
-        idx_ptr += cmd_list->IdxBuffer.Size;
-    }
-
-    // Write vertex and index data to GPU buffers
-    wgpuQueueWriteBuffer(bd->defaultQueue, bd->VertexBuffer, 0, vtx_dst,
-                         vertex_size);
-    wgpuQueueWriteBuffer(bd->defaultQueue, bd->IndexBuffer, 0, idx_dst,
-                         index_size);
-
-    // Free temporary buffers
-    free(vtx_dst);
-    free(idx_dst);
-
-    // Setup orthographic projection matrix
-    float L = draw_data->DisplayPos.x;
-    float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
-    float T = draw_data->DisplayPos.y;
-    float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
-    float mvp[4][4] = {
-        {2.0f / (R - L), 0.0f, 0.0f, 0.0f},
-        {0.0f, 2.0f / (T - B), 0.0f, 0.0f},
-        {0.0f, 0.0f, 0.5f, 0.0f},
-        {(R + L) / (L - R), (T + B) / (B - T), 0.5f, 1.0f},
-    };
-    wgpuQueueWriteBuffer(bd->defaultQueue, bd->Uniforms, 0, mvp, sizeof(mvp));
-
-    // Setup render state
-    wgpuRenderPassEncoderSetPipeline(pass_encoder, bd->PipelineState);
-    wgpuRenderPassEncoderSetBindGroup(pass_encoder, 0, bd->CommonBindGroup, 0,
-                                      NULL);
-    wgpuRenderPassEncoderSetVertexBuffer(pass_encoder, 0, bd->VertexBuffer, 0,
-                                         WGPU_WHOLE_SIZE);
-    wgpuRenderPassEncoderSetIndexBuffer(pass_encoder, bd->IndexBuffer,
-                                        sizeof(ImDrawIdx) == 2
-                                            ? WGPUIndexFormat_Uint16
-                                            : WGPUIndexFormat_Uint32,
-                                        0, WGPU_WHOLE_SIZE);
-
-    // Render command lists
-    size_t global_vtx_offset = 0;
-    size_t global_idx_offset = 0;
-    ImVec2 clip_off = draw_data->DisplayPos;
-    for (int n = 0; n < draw_data->CmdListsCount; n++) {
-        const ImDrawList *cmd_list = draw_data->CmdLists.Data[n];
-        for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
-            const ImDrawCmd *pcmd = &cmd_list->CmdBuffer.Data[cmd_i];
-            if (pcmd->UserCallback) {
-                pcmd->UserCallback(cmd_list, pcmd);
-            } else {
-                // Project scissor/clipping rectangles into framebuffer space
-                ImVec2 clip_min = {pcmd->ClipRect.x - clip_off.x,
-                                   pcmd->ClipRect.y - clip_off.y};
-                ImVec2 clip_max = {pcmd->ClipRect.z - clip_off.x,
-                                   pcmd->ClipRect.w - clip_off.y};
-                if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
-                    continue;
-
-                // Apply scissor/clipping rectangle
-                wgpuRenderPassEncoderSetScissorRect(
-                    pass_encoder, (uint32_t)clip_min.x, (uint32_t)clip_min.y,
-                    (uint32_t)(clip_max.x - clip_min.x),
-                    (uint32_t)(clip_max.y - clip_min.y));
-
-                // Draw
-                wgpuRenderPassEncoderDrawIndexed(
-                    pass_encoder, pcmd->ElemCount, 1,
-                    pcmd->IdxOffset + global_idx_offset,
-                    pcmd->VtxOffset + global_vtx_offset, 0);
-            }
-        }
-        global_idx_offset += cmd_list->IdxBuffer.Size;
-        global_vtx_offset += cmd_list->VtxBuffer.Size;
-    }
-}
-
 // Create font texture for ImGui using WGPU
-static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
+bool nano_cimgui_create_font_textures() {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     ImGuiIO *io = igGetIO();
 
     // Get font atlas data
@@ -699,7 +779,7 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
         .baseArrayLayer = 0,
         .arrayLayerCount = 1,
         .aspect = WGPUTextureAspect_All};
-    
+
     if (bd->FontTextureView)
         wgpuTextureViewRelease(bd->FontTextureView);
     bd->FontTextureView =
@@ -736,7 +816,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
     WGPUBufferDescriptor uniform_buffer_desc = {
         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
         .size = 64, // 4x4 matrix
-        .mappedAtCreation = false};
+        .mappedAtCreation = false,
+        .label = "Dear ImGui Uniform Buffer"};
     if (bd->Uniforms)
         wgpuBufferDestroy(bd->Uniforms);
     bd->Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &uniform_buffer_desc);
@@ -763,8 +844,8 @@ static inline bool ImGui_ImplWGPU_CreateFontsTexture() {
     return true;
 }
 
-inline void ImGui_ImplWGPU_InvalidateDeviceObjects(void) {
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
+void nano_cimgui_invalidate_device_objects(void) {
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     if (!bd->wgpuDevice)
         return;
 
@@ -812,16 +893,16 @@ inline void ImGui_ImplWGPU_InvalidateDeviceObjects(void) {
     bd->IndexBufferSize = 0;
 }
 
-static inline void ImGui_ImplWGPU_ProcessKeyEvent(int key, bool down) {
+void nano_cimgui_process_key_event(int key, bool down) {
     ImGuiIO *io = igGetIO();
-    ImGui_ImplWGPU_Data *bd = ImGui_ImplWGPU_GetBackendData();
+    nano_cimgui_data *bd = nano_cimgui_get_backend_data();
 
     // Ensure key is within range
     if (key < 0 || key >= 512)
         return;
 
     // Add key event to imgui event queue
-    ImGuiKey imgui_key = ImGui_ImplWGPU_KeycodeToImGuiKey(key);
+    ImGuiKey imgui_key = nano_cimgui_wgpukey_to_imguikey(key);
     if (imgui_key == ImGuiKey_None)
         return;
 
@@ -841,19 +922,18 @@ static inline void ImGui_ImplWGPU_ProcessKeyEvent(int key, bool down) {
         ImGuiIO_AddKeyEvent(io, imgui_key, false);
     }
 
-    ILOG("WGPU CImGui Impl -> Key Event: %d\n", key);
+    ILOG("nano_cimgui_process_key_event() -> Key Event: %d\n", key);
 
     // Set key state to active
     bd->KeyDown[key] = down;
 }
 
-static inline void ImGui_ImplWGPU_ProcessCharEvent(unsigned int c) {
+void nano_cimgui_process_char_event(unsigned int c) {
     ImGuiIO *io = igGetIO();
     ImGuiIO_AddInputCharacter(io, c);
 }
 
-static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
-                                                          bool down) {
+void nano_cimgui_process_mousepress_event(int button, bool down) {
     ImGuiIO *io = igGetIO();
     // We have to swap the button order because emsc uses a different order
     if (button >= 0 && button < 5) {
@@ -863,22 +943,22 @@ static inline void ImGui_ImplWGPU_ProcessMouseButtonEvent(int button,
             io->MouseDown[2] = down; // Right
         if (button == 2)
             io->MouseDown[1] = down; // Middle
-        ILOG("WGPU CImGui Impl -> MB Event: %d\n", button);
+        ILOG("nano_cimgui_process_mousepress_event() -> MB Event: %d\n", button);
     }
 }
 
-static inline void ImGui_ImplWGPU_ProcessMousePositionEvent(float x, float y) {
+void nano_cimgui_process_mousepos_event(float x, float y) {
     ImGuiIO *io = igGetIO();
     io->MousePos = (ImVec2){x, y};
 }
 
-static inline void ImGui_ImplWGPU_ProcessMouseWheelEvent(float delta) {
+void nano_cimgui_process_mousewheel_event(float delta) {
     ImGuiIO *io = igGetIO();
     ImGuiIO_AddMouseWheelEvent(io, 0.0f, delta);
 }
 
-static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y,
-                                                  float width, float height) {
+void nano_cimgui_scale_to_canvas(float res_x, float res_y, float width,
+                                 float height) {
 
     // Calculate scale factor based on expected resolution
     float scale_x = res_x / width;
@@ -895,7 +975,7 @@ static inline void ImGui_ImplWGPU_ScaleUIToCanvas(float res_x, float res_y,
     ImGuiStyle_ScaleAllSizes(new_style, scale);
 }
 
-static inline ImGuiKey ImGui_ImplWGPU_KeycodeToImGuiKey(int keycode) {
+ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode) {
     switch (keycode) {
         case KEY_TAB:
             return ImGuiKey_Tab;
@@ -1112,4 +1192,4 @@ static inline ImGuiKey ImGui_ImplWGPU_KeycodeToImGuiKey(int keycode) {
     }
 }
 
-#endif // CIMGUI_IMPL_WGPU_H
+#endif // NANO_CIMGUI_IMPL
