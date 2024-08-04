@@ -51,7 +51,7 @@ void setup_triangle_pipeline() {
     shader_code[0] = '\0';
 
     memcpy(shader_code, nano_read_file(shader_path), 8192);
-    LOG("Shader code: %s\n", shader_code);
+    LOG("Shader code:\n%s\n", shader_code);
 
     WGPUShaderModuleWGSLDescriptor wgsl_desc = {
         .chain = {.next = NULL, .sType = WGPUSType_ShaderModuleWGSLDescriptor},

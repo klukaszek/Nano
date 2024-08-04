@@ -2585,73 +2585,27 @@ static void nano_demo_window(bool *show_debug) {
 // state Include collapsibles for all nested structs
 static void nano_draw_debug_ui() {
 
+    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
+    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
+    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
+    assert(nano_app.wgpu->cmd_encoder != NULL &&
+           "Nano WGPU command encoder is NULL\n");
+
     WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
 
-    // Necessary to call before starting a new frame
-    // Will be refactored into a proper nano_cimgui_* function
-    ImGui_ImplWGPU_NewFrame();
-    igNewFrame();
+    // Necessary to call before starting a new imgui frame
+    // this calls igNewFrame()
+    nano_cimgui_new_frame();
 
-    // Show the debug GUI for the Nano application
-    if (nano_app.show_debug) {
-        nano_demo_window(&nano_app.show_debug);
-    }
-
-    // Create the draw data for the ImGui frame
-    igRender();
-
-    // Set the ImGui encoder to our current encoder
-    // This is necessary to render the ImGui draw data
-    ImGui_ImplWGPU_SetEncoder(cmd_encoder);
+    nano_demo_window(&nano_app.show_debug);
+    
+    // Get the swapchain info for the current frame so we can
+    // pass the info on to the nano_cimgui_end_frame() function
+    wgpu_swapchain_info_t swapchain_info = wgpu_get_swapchain_info();
+    nano_cimgui_end_frame(cmd_encoder, (const void *)&swapchain_info);
 
     // --------------------------
     // End of the Dear ImGui frame
-
-    // Get the current swapchain texture view
-    WGPUTextureView back_buffer_view = wgpu_get_render_view();
-    if (!back_buffer_view) {
-        LOG_ERR("Failed to get current swapchain texture view.\n");
-        return;
-    }
-
-    // Create a generic render pass color attachment
-    WGPURenderPassColorAttachment color_attachment = {
-        .view = back_buffer_view,
-        // We set the depth slice to 0xFFFFFFFF to indicate that the
-        // depth slice is not used.
-        .depthSlice = ~0u,
-        // If our view is a texture view (MSAA Samples > 1), we need
-        // to resolve the texture to the swapchain texture
-        .resolveTarget =
-            nano_app.settings.gfx.msaa.sample_count > 1
-                ? wgpuSwapChainGetCurrentTextureView(nano_app.wgpu->swapchain)
-                : NULL,
-        .loadOp = WGPULoadOp_Load,
-        .storeOp = WGPUStoreOp_Store,
-    };
-
-    WGPURenderPassDescriptor render_pass_desc = {
-        .label = "Nano Debug Render Pass",
-        .colorAttachmentCount = 1,
-        .colorAttachments = &color_attachment,
-        .depthStencilAttachment = NULL,
-    };
-
-    WGPURenderPassEncoder render_pass =
-        wgpuCommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc);
-    if (!render_pass) {
-        LOG_ERR("NANO: Failed to begin default render pass encoder.\n");
-        wgpuCommandEncoderRelease(cmd_encoder);
-        return;
-    }
-
-    // Render ImGui Draw Data
-    // This will be refactored into a nano_cimgui_render function
-    // I am thinking of making all nano + cimgui functionality
-    // optional using macros
-    ImGui_ImplWGPU_RenderDrawData(igGetDrawData(), render_pass);
-
-    wgpuRenderPassEncoderEnd(render_pass);
 }
 
 // -------------------------------------------------------------------------------
@@ -2678,6 +2632,7 @@ static WGPUCommandEncoder nano_start_frame() {
     // Get the frame time and calculate the frames per second with
     // delta time
     nano_app.frametime = wgpu_frametime();
+
     // Calculate the frames per second
     nano_app.fps = 1000 / nano_app.frametime;
 
@@ -2701,12 +2656,9 @@ static WGPUCommandEncoder nano_start_frame() {
                 &(WGPURenderPassColorAttachment){
                     .view = wgpu_get_render_view(),
                     .depthSlice = ~0u,
-                    .resolveTarget = nano_app.settings.gfx.msaa.sample_count > 1
-                                         ? wgpuSwapChainGetCurrentTextureView(
-                                               nano_app.wgpu->swapchain)
-                                         : NULL,
-                    .loadOp = WGPULoadOp_Clear,
-                    .storeOp = WGPUStoreOp_Store,
+                    .resolveTarget = wgpu_get_resolve_view(),
+                    .loadOp = WGPULoadOp_Clear, // Clear the frame
+                    .storeOp = WGPUStoreOp_Store, // Store the clear value for the frame
                     .clearValue =
                         (WGPUColor){
                             .r = nano_app.wgpu->clear_color[0],
@@ -2726,10 +2678,22 @@ static WGPUCommandEncoder nano_start_frame() {
     return nano_app.wgpu->cmd_encoder;
 }
 
+
+// Function called at the end of the frame to present the frame
+// and update the nano app state for the next frame.
+// This method should be called after nano_start_frame().
 static void nano_end_frame() {
 
-    // Draw the debug UI
-    nano_draw_debug_ui();
+    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
+    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
+    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
+    assert(nano_app.wgpu->cmd_encoder != NULL &&
+           "Nano WGPU command encoder is NULL\n");
+    
+    // Show the debug GUI for the Nano application
+    if (nano_app.show_debug) {
+        nano_draw_debug_ui();
+    }
 
     // Create a command buffer so that we can submit the command
     // encoder
@@ -2753,6 +2717,7 @@ static void nano_end_frame() {
 
     // Update the MSAA settings
     if (nano_app.settings.gfx.msaa.msaa_changed) {
+        igRender();
         uint8_t current_item = nano_app.settings.gfx.msaa.msaa_index;
         nano_app.settings.gfx.msaa.sample_count =
             nano_app.settings.gfx.msaa.msaa_values[current_item];
