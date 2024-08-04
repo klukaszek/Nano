@@ -8,7 +8,7 @@
 #include <string.h>
 #include <webgpu/webgpu.h>
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     #include "nano_cimgui.h"
 #endif
 
@@ -170,7 +170,7 @@ typedef struct {
     bool async_setup_done;
     bool async_setup_failed;
     double last_frame_time;
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_data *imgui_data;
 #endif
 } wgpu_state_t;
@@ -283,153 +283,6 @@ static bool wgpu_toggle_fullscreen(char *id) {
     return emsc_fullscreen(id) == EMSCRIPTEN_RESULT_SUCCESS;
 }
 
-// // Default Render Pipeline For Drawing To The Screen
-// // -------------------------------------------------
-// static void wgpu_init_default_pipeline() {
-//     WGPUDevice device = state.device;
-//
-//     // Create uniform buffer
-//     WGPUBufferDescriptor uniform_buffer_desc = {
-//         .label = "Nano Default Uniform Buffer",
-//         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-//         .size = sizeof(state.default_pipeline_info.clear_color),
-//         .mappedAtCreation = false,
-//     };
-//
-//     // Release the default uniform buffer if it exists
-//     if (state.default_pipeline_info.uniform_buffer) {
-//         wgpuBufferRelease(state.default_pipeline_info.uniform_buffer);
-//     }
-//
-//     state.default_pipeline_info.uniform_buffer =
-//         wgpuDeviceCreateBuffer(device, &uniform_buffer_desc);
-//
-//     // Create bind group layout
-//     WGPUBindGroupLayoutEntry bind_group_layout_entry = {
-//         .binding = 0,
-//         .visibility = WGPUShaderStage_Fragment,
-//         .buffer =
-//             {
-//                 .type = WGPUBufferBindingType_Uniform,
-//                 .hasDynamicOffset = false,
-//                 .minBindingSize =
-//                     sizeof(state.default_pipeline_info.clear_color),
-//             },
-//         .sampler = {0},
-//     };
-//
-//     WGPUBindGroupLayoutDescriptor bind_group_layout_desc = {
-//         .entryCount = 1,
-//         .entries = &bind_group_layout_entry,
-//     };
-//
-//     WGPUBindGroupLayout bind_group_layout =
-//         wgpuDeviceCreateBindGroupLayout(device, &bind_group_layout_desc);
-//
-//     // Create shader module
-//     WGPUShaderModuleDescriptor shader_desc = {
-//         .nextInChain = NULL,
-//         .label = "Nano Default Draw WGSL Shader",
-//     };
-//     WGPUShaderModuleWGSLDescriptor shader_wgsl_desc = {
-//         .chain =
-//             (WGPUChainedStruct){.next = NULL,
-//                                 .sType =
-//                                 WGPUSType_ShaderModuleWGSLDescriptor},
-//         .code = wgpu_default_shader,
-//     };
-//     shader_desc.nextInChain = &shader_wgsl_desc.chain;
-//     WGPUShaderModule shader =
-//         wgpuDeviceCreateShaderModule(device, &shader_desc);
-//
-//     // Create pipeline layout
-//     WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
-//         .bindGroupLayoutCount = 1,
-//         .bindGroupLayouts = &bind_group_layout,
-//     };
-//     WGPUPipelineLayout pipeline_layout =
-//         wgpuDeviceCreatePipelineLayout(device, &pipeline_layout_desc);
-//
-//     // Create render pipeline
-//     WGPURenderPipelineDescriptor pipeline_desc = {
-//         .layout = pipeline_layout,
-//         .label = "Nano Default Render Pipeline",
-//         .vertex =
-//             (WGPUVertexState){
-//                 .module = shader,
-//                 .entryPoint = "vs_main",
-//                 .constantCount = 0,
-//                 .constants = NULL,
-//                 .bufferCount = 0,
-//                 .buffers = NULL,
-//             },
-//         .primitive =
-//             (WGPUPrimitiveState){.topology =
-//             WGPUPrimitiveTopology_TriangleList,
-//                                  .stripIndexFormat =
-//                                  WGPUIndexFormat_Undefined, .frontFace =
-//                                  WGPUFrontFace_CCW, .cullMode =
-//                                  WGPUCullMode_None},
-//         .multisample =
-//             (WGPUMultisampleState){
-//                 .count = state.desc.sample_count,
-//                 .mask = ~0u,
-//                 .alphaToCoverageEnabled = false,
-//             },
-//         .fragment =
-//             &(WGPUFragmentState){
-//                 .module = shader,
-//                 .entryPoint = "fs_main",
-//                 .constantCount = 0,
-//                 .constants = NULL,
-//                 .targetCount = 1,
-//                 .targets =
-//                     &(WGPUColorTargetState){
-//                         .format = wgpu_get_color_format(),
-//                         .blend = NULL,
-//                         .writeMask = WGPUColorWriteMask_All,
-//                     },
-//             },
-//         .depthStencil = NULL,
-//     };
-//
-//     // Release the default pipeline if it exists
-//     if (state.default_pipeline_info.pipeline) {
-//         wgpuRenderPipelineRelease(state.default_pipeline_info.pipeline);
-//     }
-//
-//     // Assign the default pipeline to the nano app state
-//     state.default_pipeline_info.pipeline =
-//         wgpuDeviceCreateRenderPipeline(device, &pipeline_desc);
-//
-//     // Create bind group
-//     WGPUBindGroupEntry bind_group_entry = {
-//         .binding = 0,
-//         .buffer = state.default_pipeline_info.uniform_buffer,
-//         .offset = 0,
-//         .size = sizeof(state.default_pipeline_info.clear_color),
-//     };
-//     WGPUBindGroupDescriptor bind_group_desc = {
-//         .layout = bind_group_layout,
-//         .entryCount = 1,
-//         .entries = &bind_group_entry,
-//     };
-//
-//     // Release the default bind group if it exists
-//     if (state.default_pipeline_info.bind_group) {
-//         wgpuBindGroupRelease(state.default_pipeline_info.bind_group);
-//     }
-//
-//     // Assign the default bind group to the nano app state
-//     state.default_pipeline_info.bind_group =
-//         wgpuDeviceCreateBindGroup(device, &bind_group_desc);
-//
-//     // Cleanup
-//     wgpuPipelineLayoutRelease(pipeline_layout);
-//     wgpuShaderModuleRelease(shader);
-//     wgpuBindGroupLayoutRelease(bind_group_layout);
-// }
-
 // Emscripten specific code
 // ----------------------------------------------------------------------------
 
@@ -480,7 +333,7 @@ static EM_BOOL emsc_size_changed(int event_type,
     // wgpu_state_t *state = (wgpu_state_t *)userdata;
     emsc_update_canvas_size();
     wgpu_swapchain_reinit(&state);
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_scale_to_canvas(state.desc.res_x, state.desc.res_y, state.width,
                                 state.height);
 #endif
@@ -580,7 +433,7 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
 
         WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         // Send the key event to ImGui if it is enabled
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_key_event((int)wgpu_key, true);
 #endif
     }
@@ -595,7 +448,7 @@ static EM_BOOL emsc_keydown_cb(int type, const EmscriptenKeyboardEvent *ev,
             if (state->char_cb) {
                 state->char_cb(c);
             }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
             nano_cimgui_process_char_event(c);
 #endif
         }
@@ -616,7 +469,7 @@ static EM_BOOL emsc_keyup_cb(int type, const EmscriptenKeyboardEvent *ev,
             WGPU_LOG("WGPU Backend -> keydown_cb(): %c\n", ev->keyCode);
         }
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_key_event((int)wgpu_key, false);
 #endif
     }
@@ -633,7 +486,7 @@ static EM_BOOL emsc_keypress_cb(int type, const EmscriptenKeyboardEvent *ev,
     }
 
 // ImGui Handling
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_process_char_event(ev->charCode);
 #endif
     return EM_TRUE;
@@ -647,7 +500,7 @@ static EM_BOOL emsc_mousedown_cb(int type, const EmscriptenMouseEvent *ev,
         if (state->mouse_btn_down_cb) {
             state->mouse_btn_down_cb(ev->button);
         }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_mousepress_event(ev->button, true);
 #endif
 
@@ -666,7 +519,7 @@ static EM_BOOL emsc_mouseup_cb(int type, const EmscriptenMouseEvent *ev,
         if (state->mouse_btn_up_cb) {
             state->mouse_btn_up_cb(ev->button);
         }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_mousepress_event(ev->button, false);
 #endif
     }
@@ -681,7 +534,7 @@ static EM_BOOL emsc_mousemove_cb(int type, const EmscriptenMouseEvent *ev,
     if (state->mouse_pos_cb) {
         state->mouse_pos_cb((float)ev->targetX, (float)ev->targetY);
     }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_process_mousepos_event((float)ev->targetX, (float)ev->targetY);
 #endif
     return EM_TRUE;
@@ -695,7 +548,7 @@ static EM_BOOL emsc_wheel_cb(int type, const EmscriptenWheelEvent *ev,
         state->mouse_wheel_cb(-0.1f * (float)ev->deltaY);
     }
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_process_mousewheel_event(-0.1f * (float)ev->deltaY);
 #endif
 
@@ -718,7 +571,7 @@ static EM_BOOL emsc_touchstart_cb(int eventType, const EmscriptenTouchEvent *e,
             state->mouse_pos_cb((float)e->touches[0].targetX,
                                 (float)e->touches[0].targetY);
         }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_mousepress_event(0, true);
         nano_cimgui_process_mousepos_event((float)e->touches[0].targetX,
                                            (float)e->touches[0].targetY);
@@ -734,7 +587,7 @@ static EM_BOOL emsc_touchend_cb(int eventType, const EmscriptenTouchEvent *e,
     if (state->mouse_btn_up_cb) {
         state->mouse_btn_up_cb(0); // Simulate left mouse button
     }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_process_mousepress_event(0, false);
 #endif
     return EM_TRUE;
@@ -749,7 +602,7 @@ static EM_BOOL emsc_touchmove_cb(int eventType, const EmscriptenTouchEvent *e,
             state->mouse_pos_cb((float)e->touches[0].targetX,
                                 (float)e->touches[0].targetY);
         }
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
         nano_cimgui_process_mousepos_event((float)e->touches[0].targetX,
                                            (float)e->touches[0].targetY);
 #endif
@@ -799,9 +652,9 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     state->render_format =
         wgpuSurfaceGetPreferredFormat(state->surface, state->adapter);
     wgpu_swapchain_init(state);
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     // Once the swapchain is created, we can initialize ImGui
-    // This is only done if the CIMGUI_WGPU macro is defined
+    // This is only done if the NANO_CIMGUI macro is defined
     state->imgui_data = nano_cimgui_init(
         state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
         state->desc.res_x, state->desc.res_y, state->width, state->height,
@@ -971,7 +824,7 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
 void wgpu_swapchain_discard(wgpu_state_t *state) {
 
 // Release any ImGui resources that depend on the swapchain
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_invalidate_device_objects();
 #endif
 
@@ -1001,7 +854,7 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
 // Normally this is called when we swap to MSAA or back to non-MSAA
 void wgpu_swapchain_reinit(wgpu_state_t *state) {
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     state->imgui_data->multiSampleCount = state->desc.sample_count;
 #endif
 
@@ -1030,7 +883,7 @@ void wgpu_stop(void) {
         state.instance = 0;
     }
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     nano_cimgui_shutdown();
 #endif
 }

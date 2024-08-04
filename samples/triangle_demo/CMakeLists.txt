@@ -8,9 +8,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASSERTIONS --preload-file ${CMAKE_SOU
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=50mb -s STACK_SIZE=32mb")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -O3")
+set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
-include_directories(${CMAKE_SOURCE_DIR})
-include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/include/
+            )
 
 set(FILES triangle_demo.c)
 

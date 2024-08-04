@@ -2,16 +2,22 @@
 #include "webgpu.h"
 #include <time.h>
 #include <unistd.h>
-#define WGPU_BACKEND_DEBUG
+
+#define NANO_CIMGUI
 #define NANO_DEBUG
+#include "nano.h"
+#include "wgpu_entry.h"
 
 // // Debug WGPU Backend Implementation
+// // Define this to enable seeing the WGPU logs.
+// // Useful for checking what WGPU objects are failing if they are properly
+// // labelled.
 // #define WGPU_BACKEND_DEBUG
 
 // // Debug WGPU + CIMGUI Implementation
 // #define NANO_CIMGUI_DEBUG
 
-#include "nano.h"
+#include "cimgui/cimgui.h"
 
 // Custom data example for loading into the compute shader
 typedef struct {
@@ -59,6 +65,7 @@ void setup_triangle_pipeline() {
         .size = sizeof(vertex_data),
         .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
         .mappedAtCreation = false,
+        .label = "Triangle Vertex Buffer",
     };
 
     WGPUQueue queue = wgpuDeviceGetQueue(nano_app.wgpu->device);
@@ -273,6 +280,12 @@ static void frame(void) {
     // nano_execute_shaders();
 
     render_triangle(cmd_encoder);
+
+    igBegin("Nano Triangle Demo", NULL, 0);
+
+    igText("This is a simple triangle demo using Nano and WGPU.");
+
+    igEnd();
 
     // Change Nano app state at end of frame
     nano_end_frame();

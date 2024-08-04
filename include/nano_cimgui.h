@@ -2,6 +2,7 @@
 
 #define NANO_CIMGUI_IMPL
 #include "emscripten/emscripten.h"
+#include "emscripten/html5.h"
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
 #include <assert.h>
@@ -25,7 +26,7 @@
 // ----------------------------------------------------------------------------
 
 // WGPU CImGUI Shaders
-static const char *__shader_vert_wgsl =
+const char *__shader_vert_wgsl =
     "struct VertexInput {\n"
     "    @location(0) position: vec2<f32>,\n"
     "    @location(1) uv: vec2<f32>,\n"
@@ -49,7 +50,7 @@ static const char *__shader_vert_wgsl =
     "    return out;\n"
     "}\n";
 
-static const char *__shader_frag_wgsl =
+const char *__shader_frag_wgsl =
     "struct VertexOutput {\n"
     "    @builtin(position) position: vec4<f32>,\n"
     "    @location(0) color: vec4<f32>,\n"
@@ -196,6 +197,7 @@ typedef struct nano_cimgui_data {
     ImGuiContext *imguiContext;
     WGPUDevice wgpuDevice;
     WGPUQueue defaultQueue;
+    WGPUCommandEncoder cmdEncoder;
     WGPUTextureFormat renderTargetFormat;
     WGPUTextureFormat depthStencilFormat;
     uint32_t numFramesInFlight;
@@ -226,48 +228,46 @@ typedef struct nano_cimgui_data {
 // ----------------------------------------------------------------------------
 
 // Forward declarations
-static inline nano_cimgui_data *
-nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
-                 WGPUTextureFormat render_target_format,
-                 WGPUTextureFormat depth_stencil_format, float res_X,
-                 float res_Y, float width, float height,
-                 uint32_t multiSampleCount, ImGuiContext *ctx);
-static inline void nano_cimgui_shutdown(void);
-static inline void nano_cimgui_new_frame(void);
-static inline void nano_cimgui_set_encoder(WGPUCommandEncoder encoder);
-static inline void
-nano_cimgui_render_draw_data(ImDrawData *draw_data,
-                             WGPURenderPassEncoder pass_encoder);
-static inline void
-nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
-                      WGPUTextureView (*get_render_view)(void),
-                      WGPUTextureView (*get_resolve_view)(void));
-static inline bool nano_cimgui_create_device_objects();
-static inline void nano_cimgui_invalidate_device_objects(void);
-static inline WGPUShaderModule
-nano_cimgui_create_shader_module(WGPUDevice device, const char *source);
-static inline bool nano_cimgui_create_font_textures(void);
-static inline void nano_cimgui_process_key_event(int key, bool down);
+nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
+                                   WGPUTextureFormat render_target_format,
+                                   WGPUTextureFormat depth_stencil_format,
+                                   float res_X, float res_Y, float width,
+                                   float height, uint32_t multiSampleCount,
+                                   ImGuiContext *ctx);
+void nano_cimgui_shutdown(void);
+void nano_cimgui_new_frame(void);
+void nano_cimgui_set_encoder(WGPUCommandEncoder encoder);
+void nano_cimgui_render_draw_data(ImDrawData *draw_data,
+                                  WGPURenderPassEncoder pass_encoder);
+void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                           WGPUTextureView (*get_render_view)(void),
+                           WGPUTextureView (*get_resolve_view)(void));
+bool nano_cimgui_create_device_objects();
+void nano_cimgui_invalidate_device_objects(void);
+WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
+                                                  const char *source);
+bool nano_cimgui_create_font_textures(void);
+void nano_cimgui_process_key_event(int key, bool down);
 // Don't use this if you aren't using my WGPU backend
-static inline ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode);
-static inline void nano_cimgui_process_char_event(unsigned int c);
-static inline void nano_cimgui_process_mousewheel_event(float delta);
-static inline void nano_cimgui_process_mousepress_event(int button, bool down);
-static inline void nano_cimgui_process_mousepos_event(float x, float y);
-static inline void nano_cimgui_scale_to_canvas(float res_x, float res_y,
-                                               float width, float height);
+ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode);
+void nano_cimgui_process_char_event(unsigned int c);
+void nano_cimgui_process_mousewheel_event(float delta);
+void nano_cimgui_process_mousepress_event(int button, bool down);
+void nano_cimgui_process_mousepos_event(float x, float y);
+void nano_cimgui_scale_to_canvas(float res_x, float res_y, float width,
+                                 float height);
 
 // Function Implementations
 // ----------------------------------------------------------------------------
 
 // Helper function to retrieve the backend data
-static inline nano_cimgui_data *nano_cimgui_get_backend_data(void) {
+nano_cimgui_data *nano_cimgui_get_backend_data(void) {
     return (nano_cimgui_data *)igGetIO()->BackendRendererUserData;
 }
 
 // Create a shader module from WGSL source code
-static WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
-                                                         const char *source) {
+WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
+                                                  const char *source) {
     // Set up the WGSL shader descriptor
     WGPUShaderModuleWGSLDescriptor wgsl_desc = {
         .chain =
@@ -281,12 +281,12 @@ static WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
 }
 
 // Initialize the WGPU backend for ImGui
-static inline nano_cimgui_data *
-nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
-                 WGPUTextureFormat render_target_format,
-                 WGPUTextureFormat depth_stencil_format, float res_x,
-                 float res_y, float width, float height,
-                 uint32_t multiSampleCount, ImGuiContext *ctx) {
+nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
+                                   WGPUTextureFormat render_target_format,
+                                   WGPUTextureFormat depth_stencil_format,
+                                   float res_x, float res_y, float width,
+                                   float height, uint32_t multiSampleCount,
+                                   ImGuiContext *ctx) {
 
     if (ctx == NULL) {
         ctx = igCreateContext(NULL);
@@ -350,7 +350,7 @@ nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
 }
 
 // Shutdown the WGPU backend
-inline void nano_cimgui_shutdown(void) {
+void nano_cimgui_shutdown(void) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     IM_ASSERT(bd != NULL &&
               "No renderer backend to shutdown, or already shutdown?");
@@ -373,7 +373,7 @@ inline void nano_cimgui_shutdown(void) {
 }
 
 // Prepare for a new frame
-static inline void nano_cimgui_new_frame(void) {
+void nano_cimgui_new_frame(void) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     IM_ASSERT(bd != NULL && "Did you call nano_cimgui_init()?");
 
@@ -398,15 +398,14 @@ static inline void nano_cimgui_new_frame(void) {
 }
 
 // Set the default command encoder for the WGPU backend
-static inline void nano_cimgui_set_encoder(WGPUCommandEncoder encoder) {
+void nano_cimgui_set_encoder(WGPUCommandEncoder encoder) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     bd->DefaultCommandEncoder = encoder;
 }
 
 // Handle rendering of ImGui's draw data using an existing WGPURenderPassEncoder
-static inline void
-nano_cimgui_render_draw_data(ImDrawData *draw_data,
-                             WGPURenderPassEncoder pass_encoder) {
+void nano_cimgui_render_draw_data(ImDrawData *draw_data,
+                                  WGPURenderPassEncoder pass_encoder) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
 
     // Avoid rendering when minimized
@@ -429,7 +428,9 @@ nano_cimgui_render_draw_data(ImDrawData *draw_data,
         WGPUBufferDescriptor vb_desc = {
             .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
             .size =
-                ((size_t)bd->VertexBufferSize * sizeof(ImDrawVert) + 3) & ~3};
+                ((size_t)bd->VertexBufferSize * sizeof(ImDrawVert) + 3) & ~3,
+            .label = "Dear ImGui Vertex Buffer"
+        };
         bd->VertexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &vb_desc);
     }
 
@@ -442,7 +443,9 @@ nano_cimgui_render_draw_data(ImDrawData *draw_data,
         bd->IndexBufferSize = draw_data->TotalIdxCount + 10000;
         WGPUBufferDescriptor ib_desc = {
             .usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
-            .size = ((size_t)bd->IndexBufferSize * sizeof(ImDrawIdx) + 3) & ~3};
+            .size = ((size_t)bd->IndexBufferSize * sizeof(ImDrawIdx) + 3) & ~3,
+            .label = "Dear ImGui Index Buffer"
+        };
         bd->IndexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ib_desc);
     }
 
@@ -544,16 +547,17 @@ typedef struct nano_cimgui_swapchain_info {
 // This function requires a command encoder and swapchain info that contains the
 // render and resolve views. This function calls nano_cimgui_render_draw_data()
 // to render the ImGui draw data on the render pass created in this function.
-static inline void
-nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
-                      WGPUTextureView (*get_render_view)(void),
-                      WGPUTextureView (*get_resolve_view)(void)) {
+void nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
+                           WGPUTextureView (*get_render_view)(void),
+                           WGPUTextureView (*get_resolve_view)(void)) {
     assert(cmd_encoder != NULL && "Command encoder was NULL");
 
     // Get data from the swapchain info
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
 
     igRender();
+    if (igGetDrawData() == NULL)
+        return;
 
     // Set the ImGui encoder to our current encoder
     // This is necessary to render the ImGui draw data
@@ -599,7 +603,7 @@ nano_cimgui_end_frame(WGPUCommandEncoder cmd_encoder,
 }
 
 // Create WGPU device objects (pipeline, buffers, textures, etc.)
-static inline bool nano_cimgui_create_device_objects() {
+bool nano_cimgui_create_device_objects() {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     if (!bd->wgpuDevice)
         return false;
@@ -736,7 +740,7 @@ static inline bool nano_cimgui_create_device_objects() {
 }
 
 // Create font texture for ImGui using WGPU
-static inline bool nano_cimgui_create_font_textures() {
+bool nano_cimgui_create_font_textures() {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     ImGuiIO *io = igGetIO();
 
@@ -806,7 +810,9 @@ static inline bool nano_cimgui_create_font_textures() {
     WGPUBufferDescriptor uniform_buffer_desc = {
         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
         .size = 64, // 4x4 matrix
-        .mappedAtCreation = false};
+        .mappedAtCreation = false,
+        .label = "Dear ImGui Uniform Buffer"
+    };
     if (bd->Uniforms)
         wgpuBufferDestroy(bd->Uniforms);
     bd->Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &uniform_buffer_desc);
@@ -833,7 +839,7 @@ static inline bool nano_cimgui_create_font_textures() {
     return true;
 }
 
-static inline void nano_cimgui_invalidate_device_objects(void) {
+void nano_cimgui_invalidate_device_objects(void) {
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
     if (!bd->wgpuDevice)
         return;
@@ -882,7 +888,7 @@ static inline void nano_cimgui_invalidate_device_objects(void) {
     bd->IndexBufferSize = 0;
 }
 
-static inline void nano_cimgui_process_key_event(int key, bool down) {
+void nano_cimgui_process_key_event(int key, bool down) {
     ImGuiIO *io = igGetIO();
     nano_cimgui_data *bd = nano_cimgui_get_backend_data();
 
@@ -917,12 +923,12 @@ static inline void nano_cimgui_process_key_event(int key, bool down) {
     bd->KeyDown[key] = down;
 }
 
-static inline void nano_cimgui_process_char_event(unsigned int c) {
+void nano_cimgui_process_char_event(unsigned int c) {
     ImGuiIO *io = igGetIO();
     ImGuiIO_AddInputCharacter(io, c);
 }
 
-static inline void nano_cimgui_process_mousepress_event(int button, bool down) {
+void nano_cimgui_process_mousepress_event(int button, bool down) {
     ImGuiIO *io = igGetIO();
     // We have to swap the button order because emsc uses a different order
     if (button >= 0 && button < 5) {
@@ -936,18 +942,18 @@ static inline void nano_cimgui_process_mousepress_event(int button, bool down) {
     }
 }
 
-static inline void nano_cimgui_process_mousepos_event(float x, float y) {
+void nano_cimgui_process_mousepos_event(float x, float y) {
     ImGuiIO *io = igGetIO();
     io->MousePos = (ImVec2){x, y};
 }
 
-static inline void nano_cimgui_process_mousewheel_event(float delta) {
+void nano_cimgui_process_mousewheel_event(float delta) {
     ImGuiIO *io = igGetIO();
     ImGuiIO_AddMouseWheelEvent(io, 0.0f, delta);
 }
 
-static inline void nano_cimgui_scale_to_canvas(float res_x, float res_y,
-                                               float width, float height) {
+void nano_cimgui_scale_to_canvas(float res_x, float res_y, float width,
+                                 float height) {
 
     // Calculate scale factor based on expected resolution
     float scale_x = res_x / width;
@@ -964,7 +970,7 @@ static inline void nano_cimgui_scale_to_canvas(float res_x, float res_y,
     ImGuiStyle_ScaleAllSizes(new_style, scale);
 }
 
-static inline ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode) {
+ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode) {
     switch (keycode) {
         case KEY_TAB:
             return ImGuiKey_Tab;

@@ -57,8 +57,9 @@
 //  NANO
 // -------------------------------------------------
 
+#pragma once
+
 #include "webgpu.h"
-#define CIMGUI_WGPU
 #include "wgpu_entry.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -66,8 +67,9 @@
 #include <webgpu/webgpu.h>
 #include <wgsl-parser.h>
 
-#ifdef CIMGUI_WGPU
+#ifdef NANO_CIMGUI
     #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+    #include "nano_cimgui.h"
     #include <cimgui.h>
 #endif
 
@@ -2229,7 +2231,13 @@ static void nano_default_event(const void *e) { /* simgui_handle_event(e); */ }
 // information and settings. This is a simple window that can be toggled on and
 // off. This is a simple example of how to use the ImGui API to create a window
 // for a Nano application.
-static void nano_demo_window() {
+static void nano_draw_debug_ui() {
+
+    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
+    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
+    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
+    assert(nano_app.wgpu->cmd_encoder != NULL &&
+           "Nano WGPU command encoder is NULL\n");
 
     static bool show_demo = false;
     bool visible = true;
@@ -2570,34 +2578,6 @@ static void nano_demo_window() {
     }
 }
 
-// A function that draws a CImGui frame of the current nano_app
-// state Include collapsibles for all nested structs
-static void nano_draw_debug_ui() {
-
-    assert(nano_app.wgpu != NULL && "Nano WGPU app is NULL\n");
-    assert(nano_app.wgpu->device != NULL && "Nano WGPU device is NULL\n");
-    assert(nano_app.wgpu->swapchain != NULL && "Nano WGPU swapchain is NULL\n");
-    assert(nano_app.wgpu->cmd_encoder != NULL &&
-           "Nano WGPU command encoder is NULL\n");
-
-    WGPUCommandEncoder cmd_encoder = nano_app.wgpu->cmd_encoder;
-
-    // Necessary to call before starting a new imgui frame
-    // this calls igNewFrame()
-    // This handles all the overhead needed to get a new imgui frame
-    nano_cimgui_new_frame();
-    
-    // Draw the demo window as part of this imgui frame
-    nano_demo_window();
-
-    // Get the swapchain info for the current frame so we can
-    // pass the info on to the nano_cimgui_end_frame() function
-    nano_cimgui_end_frame(cmd_encoder, wgpu_get_render_view, wgpu_get_resolve_view);
-
-    // --------------------------
-    // End of the Dear ImGui frame
-}
-
 // -------------------------------------------------------------------------------
 // Nano Frame Update Functions
 // nano_start_frame() - Called at the beginning of the frame
@@ -2666,6 +2646,11 @@ static WGPUCommandEncoder nano_start_frame() {
         wgpuRenderPassEncoderEnd(pass);
     } // End of clear swapchain
 
+// Start the ImGui frame if nano_cimgui is enabled
+#ifdef NANO_CIMGUI
+    nano_cimgui_new_frame();
+#endif
+
     return nano_app.wgpu->cmd_encoder;
 }
 
@@ -2680,10 +2665,18 @@ static void nano_end_frame() {
     assert(nano_app.wgpu->cmd_encoder != NULL &&
            "Nano WGPU command encoder is NULL\n");
 
-    // Show the debug GUI for the Nano application
+// If nano_cimgui is enabled, draw the debug UI if needed
+// and end the ImGui frame so we can render the ImGuiDrawData
+#ifdef NANO_CIMGUI
     if (nano_app.show_debug) {
         nano_draw_debug_ui();
     }
+
+    // We pass our command encoder to nano_cimgui to render the ImGuiDrawData
+    // onto the frame
+    nano_cimgui_end_frame(nano_app.wgpu->cmd_encoder, wgpu_get_render_view,
+                          wgpu_get_resolve_view);
+#endif
 
     // Create a command buffer so that we can submit the command
     // encoder
@@ -2708,15 +2701,13 @@ static void nano_end_frame() {
     // Update the MSAA settings
     if (nano_app.settings.gfx.msaa.msaa_changed) {
         uint8_t current_item_id = nano_app.settings.gfx.msaa.msaa_index;
-        uint8_t current_item = nano_app.settings.gfx.msaa.msaa_values[current_item_id];
-        if (current_item ==
-            nano_app.settings.gfx.msaa.sample_count) {
+        uint8_t current_item =
+            nano_app.settings.gfx.msaa.msaa_values[current_item_id];
+        if (current_item == nano_app.settings.gfx.msaa.sample_count) {
             nano_app.settings.gfx.msaa.msaa_changed = false;
         } else {
-            nano_app.settings.gfx.msaa.sample_count =
-                current_item;
-            nano_app.wgpu->desc.sample_count =
-                current_item;
+            nano_app.settings.gfx.msaa.sample_count = current_item;
+            nano_app.wgpu->desc.sample_count = current_item;
             wgpu_swapchain_reinit(nano_app.wgpu);
             nano_app.settings.gfx.msaa.msaa_changed = false;
             nano_init_fonts(&nano_app.font_info, nano_app.font_info.font_size);
