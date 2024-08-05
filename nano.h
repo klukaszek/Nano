@@ -7,8 +7,9 @@
 //  --------------------------------------------------------------------
 //
 //  C Application framework for creating 2D/3D applications
-//  using WebGPU. This header file includes the necessary
-//  functions and data structures to create a simple application.
+//  using WebGPU and WGSL. This header file includes the necessary
+//  functions and data structures to create a simple application with
+//  rendering and compute capabilities.
 //
 //  Necessary files for Nano:
 //  - nano_web.h: Web entry point for Nano
@@ -18,6 +19,7 @@
 //  Nano comes with extra headers for additional functionality:
 //  - nano_cimgui.h: CImGui integration for Nano
 //      - Requires cimgui library to be included and linked in the build
+//      - Repo: https://github.com/cimgui/cimgui
 //
 //  These headers can be included by defining the preprocessor definitions:
 //  - #define NANO_CIMGUI
@@ -60,16 +62,6 @@
 // }
 // ```
 //
-// If you want to use CImGui, you can include nano_cimgui.h in your project
-// and clone cimgui from the official repository: https://github.com/cimgui/cimgui
-// 
-// Once you have cloned cimgui, and compiled the library, you can add the following
-// preprocessor definition to your project above the include for nano.h:
-//
-//  - #define NANO_CIMGUI
-//
-// 
-//
 // ------------------------------------------------------------------
 
 // TODO: Test render pipeline creation in the shader pool
@@ -88,12 +80,14 @@
 #ifndef NANO_H
 #define NANO_H
 
-#include "webgpu.h"
+#include <ctype.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <webgpu/webgpu.h>
-#include <wgsl-parser.h>
 
 // Use web based entry point for Nano
 // if NANO_NATIVE is not defined
@@ -125,10 +119,21 @@
 #define NANO_FAIL -1
 #define NANO_OK 0
 
+#define NANO_MAX_IDENT_LENGTH 256 // Maximum length of an identifier parsed
+#define NANO_MAX_ENTRIES 3        // Compute, Vertex, Fragment
+#define NANO_MAX_GROUPS 4         // Maximum number of bind groups
+#define NANO_GROUP_MAX_BINDINGS 8 // Maximum number of bindings per group
+
+// Maximum number of compute shaders that can be stored in the shader pool
+#define NANO_MAX_SHADERS 16
+
 // Generic Array/Stack Implementation Based on old GGYL code
+// Only works with simple data types, not structs or pointers
+// Useful for working with handles instead of pointers as they
+// are more stable and performant.
 // ----------------------------------------
 
-// Call this macro to define an array/s structure and its functions
+// Call this macro to define an array/stack structure and its functions
 // The macro will define the following functions:
 // - NAME##_init(NAME *s)
 // - NAME##_is_empty(NAME *s)
@@ -207,20 +212,93 @@
         LOG("\n");                                                             \
     }
 
-// Nano Binding & Buffer Declarations
+// -------------------------------------------------------------------------------------------
+
+// NANO STRUCT AND ENUM DEFINITIONS
+
 // ---------------------------------------
 
-// Maximum size of the hash table for each of the buffer pools.
-#define NANO_MAX_GROUPS 4
-#define NANO_GROUP_MAX_BINDINGS 8
+// Nano WGSL Parser Definitions
+// ---------------------------------------
 
-typedef BindingInfo nano_binding_info_t;
+typedef enum {
+    NONE,
+    COMPUTE,
+    VERTEX,
+    FRAGMENT,
+} wgsl_shader_type_t;
+
+typedef enum {
+    BUFFER,
+    TEXTURE,
+    STORAGE_TEXTURE,
+} wgsl_binding_type_t;
+
+// typedefs for the necessary binding information
+// this is used to create a union for the different binding types
+typedef WGPUBufferUsageFlags wgsl_buffer_usage_t;
+typedef WGPUSamplerBindingType wgsl_sampler_info_t;
+typedef struct {
+    WGPUTextureSampleType sample_type;
+    WGPUTextureViewDimension view_dimension;
+    WGPUTextureUsageFlags usage;
+} wgsl_texture_info_t;
+typedef struct {
+    WGPUStorageTextureAccess access;
+    WGPUTextureFormat format;
+    WGPUTextureViewDimension view_dimension;
+    WGPUTextureUsageFlags usage;
+} wgsl_storage_texture_info_t;
+
+// WGSL Types
+typedef enum {
+    TYPE_VOID,
+    TYPE_BOOL,
+    TYPE_I32,
+    TYPE_U32,
+    TYPE_F32,
+    TYPE_F16,
+    TYPE_VEC2,
+    TYPE_VEC3,
+    TYPE_VEC4,
+    TYPE_MAT2X2,
+    TYPE_MAT2X3,
+    TYPE_MAT2X4,
+    TYPE_MAT3X2,
+    TYPE_MAT3X3,
+    TYPE_MAT3X4,
+    TYPE_MAT4X2,
+    TYPE_MAT4X3,
+    TYPE_MAT4X4,
+    TYPE_ARRAY,
+    TYPE_STRUCT,
+    TYPE_TEXTURE,
+    TYPE_SAMPLER,
+    TYPE_POINTER,
+    TYPE_ATOMIC,
+    TYPE_CUSTOM
+} wgsl_type;
+
+// Keep track order of entry points in the shader
+typedef struct {
+    int8_t vertex;
+    int8_t fragment;
+    int8_t compute;
+} wgsl_shader_indices_t;
+
+// Nano WGSL Parser Struct
+typedef struct {
+    const char *input;
+    int position;
+} nano_wgsl_parser_t;
+
+// Nano Binding & Buffer Declarations
+// ---------------------------------------
 typedef WGPUBufferDescriptor nano_buffer_desc_t;
 
-// Building the BindGroupDescriptor must be a manual process
-// since Nano can't inherently know what  is being passed
-// into the BindGroupEntries. When nano_shader_build_bindgroup(shader)
-// is called, Nano will check for
+// Contains the data for a buffer binding
+// If the shader's binding is a buffer and expects data, we store the data here
+// See: nano_shader_t->buffer_data
 typedef struct nano_buffer_data_t {
     uint8_t group;
     uint8_t binding;
@@ -230,36 +308,101 @@ typedef struct nano_buffer_data_t {
     void *data;
 } nano_buffer_data_t;
 
-// Nano Entry Point Declarations
-// ----------------------------------------
-typedef EntryPoint nano_entry_t;
+// Contains the information that is parsed from the shader source
+// for each binding in the shader
+typedef struct {
+    bool in_use;
+    size_t size;
+
+    wgsl_binding_type_t binding_type;
+
+    // Store the reference to whatever the binding is
+    union {
+        WGPUBuffer buffer;
+        WGPUTexture texture;
+        WGPUTextureView texture_view;
+    } data;
+
+    // Store the information about the binding
+    union {
+        wgsl_buffer_usage_t buffer_usage;
+        wgsl_texture_info_t texture_info;
+    } info;
+
+    int group;
+    int binding;
+
+    uint32_t shader_id;
+    char data_type[32];
+    char name[NANO_MAX_IDENT_LENGTH];
+} nano_binding_info_t;
 
 // Nano Pipeline Declarations
 // ---------------------------------------
 typedef struct nano_pipeline_layout_t {
-    WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
+    WGPUBindGroupLayout bg_layouts[NANO_MAX_GROUPS];
     size_t num_layouts;
 } nano_pipeline_layout_t;
 
 // Nano Pass Action Declarations
 // ----------------------------------------
 typedef void (*nano_pass_func)(void);
-
 typedef struct nano_pass_action_t {
     char label[64];
     nano_pass_func func;
 } nano_pass_action_t;
 
+// Nano Bind Group Declarations
+// ----------------------------------------
+typedef WGPUBindGroup nano_bind_group_t;
+
+// Nano Entry Point Declarations
+// ----------------------------------------
+
+// Each entry point can have a different pipeline
+typedef struct {
+    char entry[NANO_MAX_IDENT_LENGTH];
+    char label[64];
+    bool in_use;
+    wgsl_shader_type_t type;
+    struct WorkgroupSize {
+        uint8_t x;
+        uint8_t y;
+        uint8_t z;
+    } workgroup_size;
+} nano_entry_t;
+
 // Nano Shader Declarations
 // ----------------------------------------
 
-// Maximum number of compute shaders that can be stored in the shader pool
-#define NANO_MAX_SHADERS 16
+// Each shader can have multiple entry points
+// For example, a compute shader, a vertex shader, and a fragment shader
+// The bindings defined in the shader are shared between all entry points
+// so we store them in the nano_shader_info_t struct
+// We can then use the binding information to create the bind group layouts for
+// each entry point pipeline
+typedef struct {
 
-typedef ShaderType nano_shader_type_t;
-typedef ShaderInfo nano_shader_info_t;
+    uint32_t id;
+    int binding_count;
+    uint32_t buffer_size;
 
-typedef WGPUBindGroup nano_bind_group_t;
+    char *source;
+    char label[64];
+    char path[256];
+
+    // Initialized to -1 to indicate that the group is not set
+    // Any binding index that is -1 is not used
+    // When creating the bind group layouts, we will skip any unused bindings
+    int group_indices[NANO_MAX_GROUPS][NANO_GROUP_MAX_BINDINGS];
+    nano_binding_info_t bindings[NANO_MAX_ENTRIES];
+
+    int entry_point_count;
+    nano_entry_t entry_points[NANO_MAX_ENTRIES];
+
+    wgsl_shader_indices_t entry_indices;
+
+} nano_shader_info_t;
 
 // This is the struct that will hold all of the information for a shader
 // loaded into the shader pool.
@@ -268,7 +411,7 @@ typedef struct nano_shader_t {
     bool in_use;
     bool built;
 
-    nano_shader_type_t type;
+    wgsl_shader_type_t type;
     nano_shader_info_t info;
 
     nano_pipeline_layout_t layout;
@@ -292,20 +435,20 @@ typedef struct nano_shader_t {
     WGPURenderPipeline render_pipeline;
 } nano_shader_t;
 
-// Node for the shader pool hash table
-typedef struct ShaderNode {
-    nano_shader_t shader_entry;
-    bool occupied;
-} ShaderNode;
-
 // Nano Shader Pool Declarations
 // ----------------------------------------
 
 // Define an array stack for the active shaders to keep track of the indices
 DEFINE_ARRAY_STACK(int, nano_index_array, NANO_MAX_SHADERS)
 
+// Node for the shader pool hash table
+typedef struct nano_shader_node_t {
+    nano_shader_t shader_entry;
+    bool occupied;
+} nano_shader_node_t;
+
 typedef struct nano_shader_pool_t {
-    ShaderNode shaders[NANO_MAX_SHADERS];
+    nano_shader_node_t shaders[NANO_MAX_SHADERS];
     int shader_count;
     // One string for all shader labels used for ImGui combo boxes
     // Only updated when a shader is added or removed from the pool
@@ -316,23 +459,23 @@ typedef struct nano_shader_pool_t {
 // Nano Font Declarations
 // -------------------------------------------
 
-// Include fonts as header files
-#include "JetBrainsMonoNerdFontMono-Bold.h"
-#include "LilexNerdFontMono-Medium.h"
-#include "Roboto-Regular.h"
-
 // Total number of fonts included in nano
-#define NANO_NUM_FONTS 3
+#define NANO_MAX_FONTS 16
+#ifndef NANO_NUM_FONTS
+    #define NANO_NUM_FONTS 0
+#endif
 
 typedef struct nano_font_t {
     const unsigned char *ttf;
     size_t ttf_len;
     const char *name;
+#ifdef NANO_CIMGUI
     ImFont *imfont;
+#endif
 } nano_font_t;
 
 typedef struct nano_font_info_t {
-    nano_font_t fonts[NANO_NUM_FONTS];
+    nano_font_t fonts[NANO_MAX_FONTS];
     uint32_t font_count;
     uint32_t font_index;
     float font_size;
@@ -345,31 +488,270 @@ typedef struct nano_font_info_t {
 // Leave the imfont pointer for now, we will set this in the init method
 // for our imgui fonts
 static nano_font_info_t nano_fonts = {
-    // Add the fonts we wish to read from our font header files
-    .fonts =
-        {
-            {
-                .ttf = JetBrainsMonoNerdFontMono_Bold_ttf,
-                .ttf_len = sizeof(JetBrainsMonoNerdFontMono_Bold_ttf),
-                .name = "JetBrains Mono Nerd",
-            },
-            {
-                .ttf = LilexNerdFontMono_Medium_ttf,
-                .ttf_len = sizeof(LilexNerdFontMono_Medium_ttf),
-                .name = "Lilex Nerd Font",
-            },
-            {
-                .ttf = Roboto_Regular_ttf,
-                .ttf_len = sizeof(Roboto_Regular_ttf),
-                .name = "Roboto",
-            },
-        },
+    .fonts = {},
     .font_count = NANO_NUM_FONTS,
-    // Default font index
     .font_index = 0,
-    // Default font size
     .font_size = 16.0f,
+    .update_font = false,
 };
+
+// -------------------------------------------------------------------------------------------
+
+// Nano WGSL Parser Functions
+// ---------------------------------------
+
+void init_parser(nano_wgsl_parser_t *parser, const char *input) {
+    parser->input = input;
+    parser->position = 0;
+}
+
+char peek(nano_wgsl_parser_t *parser) {
+    return parser->input[parser->position];
+}
+
+char next(nano_wgsl_parser_t *parser) {
+    return parser->input[parser->position++];
+}
+
+int is_eof(nano_wgsl_parser_t *parser) { return peek(parser) == '\0'; }
+
+void skip_whitespace(nano_wgsl_parser_t *parser) {
+    while (isspace(peek(parser))) {
+        next(parser);
+    }
+}
+
+int parse_number(nano_wgsl_parser_t *parser) {
+    int result = 0;
+    while (isdigit(peek(parser))) {
+        result = result * 10 + (next(parser) - '0');
+    }
+    return result;
+}
+
+void parse_identifier(nano_wgsl_parser_t *parser, char *ident, bool is_type) {
+    int i = 0;
+    if (!is_type) {
+        while (isalnum(peek(parser)) || peek(parser) == '_') {
+            ident[i++] = next(parser);
+            if (i >= NANO_MAX_IDENT_LENGTH - 1)
+                break;
+        }
+    } else {
+        while (isalnum(peek(parser)) || peek(parser) == '_' ||
+               peek(parser) == '<' || peek(parser) == '>') {
+            ident[i++] = next(parser);
+            if (i >= NANO_MAX_IDENT_LENGTH - 1)
+                break;
+        }
+    }
+
+    ident[i] = '\0';
+}
+
+WGPUFlags parse_storage_class_and_access(nano_wgsl_parser_t *parser) {
+    WGPUFlags flags = WGPUBufferUsage_None;
+    char identifier[NANO_MAX_IDENT_LENGTH];
+
+    parse_identifier(parser, identifier, false);
+
+    if (strcmp(identifier, "uniform") == 0) {
+        flags |= WGPUBufferUsage_Uniform;
+    } else if (strcmp(identifier, "storage") == 0) {
+        flags |= WGPUBufferUsage_Storage;
+    }
+
+    skip_whitespace(parser);
+    if (peek(parser) == ',') {
+        next(parser); // Skip ','
+        skip_whitespace(parser);
+        parse_identifier(parser, identifier, false);
+
+        if (strcmp(identifier, "read") == 0) {
+            flags |= WGPUBufferUsage_CopySrc;
+        } else if (strcmp(identifier, "write") == 0) {
+            flags |= WGPUBufferUsage_CopyDst;
+        } else if (strcmp(identifier, "read_write") == 0) {
+            flags |= WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
+        }
+    }
+
+    return flags;
+}
+
+// Determine the type of the binding
+wgsl_binding_type_t parse_binding_type(nano_wgsl_parser_t *parser) {
+    wgsl_binding_type_t type = BUFFER;
+    char identifier[NANO_MAX_IDENT_LENGTH];
+    skip_whitespace(parser);
+    parse_identifier(parser, identifier, false);
+
+    if (strcmp(identifier, "texture") == 0) {
+        type = TEXTURE;
+    } else if (strcmp(identifier, "storage_texture") == 0) {
+        type = STORAGE_TEXTURE;
+    }
+
+    return type;
+}
+
+// Parse the binding information from the shader source
+void parse_binding(nano_wgsl_parser_t *parser, nano_shader_info_t *info) {
+    skip_whitespace(parser);
+    if (next(parser) != '@' ||
+        strncmp(&parser->input[parser->position], "group", 5) != 0) {
+        return;
+    }
+    parser->position += 5;
+
+    skip_whitespace(parser);
+    next(parser); // Skip '('
+    int group = parse_number(parser);
+    next(parser); // Skip ')'
+
+    skip_whitespace(parser);
+    if (strncmp(&parser->input[parser->position], "@binding", 8) != 0) {
+        return;
+    }
+    parser->position += 8;
+
+    skip_whitespace(parser);
+    next(parser); // Skip '('
+    int binding = parse_number(parser);
+    next(parser); // Skip ')'
+
+    skip_whitespace(parser);
+    if (strncmp(&parser->input[parser->position], "var", 3) != 0) {
+        return;
+    }
+    parser->position += 3;
+
+    skip_whitespace(parser);
+    next(parser); // Skip '<'
+
+    WGPUBufferUsageFlags buffer_usage = parse_storage_class_and_access(parser);
+
+    next(parser); // Skip '>'
+
+    skip_whitespace(parser);
+    char name[NANO_MAX_IDENT_LENGTH];
+    parse_identifier(parser, name, false);
+
+    skip_whitespace(parser);
+    next(parser); // Skip ':'
+
+    // Create a new binding info struct and set the default fields
+    nano_binding_info_t *bi = &info->bindings[info->binding_count++];
+    bi->group = group;
+    bi->binding = binding;
+    bi->shader_id = info->id;
+
+    // Get binding type so we can parse the correct information
+    wgsl_binding_type_t binding_type = parse_binding_type(parser);
+
+    // Parse the rest of the binding information based on the type
+    switch (binding_type) {
+        case TEXTURE:
+            // parse_texture(parser, bi);
+            break;
+        case STORAGE_TEXTURE:
+            // parse_storage_texture(parser, bi);
+            break;
+        case BUFFER:
+            bi->binding_type = BUFFER;
+            bi->info.buffer_usage = buffer_usage;
+            parse_identifier(parser, bi->data_type, true);
+            break;
+    }
+
+    // Save the name of the binding
+    strcpy(bi->name, name);
+}
+
+void parse_entry_point(nano_wgsl_parser_t *parser, nano_shader_info_t *info) {
+    skip_whitespace(parser);
+    if (next(parser) != '@') {
+        return;
+    }
+
+    char attr[NANO_MAX_IDENT_LENGTH];
+    parse_identifier(parser, attr, false);
+
+    // Check if the attribute is an entry point
+    int index = info->entry_point_count;
+    nano_entry_t *ep = &info->entry_points[info->entry_point_count++];
+    if (strcmp(attr, "compute") == 0) {
+        ep->type = COMPUTE;
+    } else if (strcmp(attr, "vertex") == 0) {
+        ep->type = VERTEX;
+    } else if (strcmp(attr, "fragment") == 0) {
+        ep->type = FRAGMENT;
+    } else {
+        info->entry_point_count--;
+        return;
+    }
+
+    // Parse workgroup size
+    skip_whitespace(parser);
+    if (strncmp(&parser->input[parser->position], "@workgroup_size", 15) == 0) {
+        parser->position += 15;
+        skip_whitespace(parser);
+        next(parser); // Skip '('
+        ep->workgroup_size.x = parse_number(parser);
+        if (next(parser) == ',') {
+            ep->workgroup_size.y = parse_number(parser);
+            if (next(parser) == ',') {
+                ep->workgroup_size.z = parse_number(parser);
+            }
+        }
+        next(parser); // Skip ')'
+        skip_whitespace(parser);
+    }
+
+    // Ensure workgroup size is at least 1
+    if (ep->workgroup_size.x == 0)
+        ep->workgroup_size.x = 1;
+    if (ep->workgroup_size.y == 0)
+        ep->workgroup_size.y = 1;
+    if (ep->workgroup_size.z == 0)
+        ep->workgroup_size.z = 1;
+
+    // Parse entry point name
+    if (strncmp(&parser->input[parser->position], "fn", 2) == 0) {
+        parser->position += 2;
+        skip_whitespace(parser);
+        parse_identifier(parser, ep->entry, false);
+    }
+}
+
+// Top level function to parse the shader source into a nano_shader_info_t
+// struct
+void parse_shader(nano_wgsl_parser_t *parser, nano_shader_info_t *info) {
+    while (!is_eof(parser)) {
+        skip_whitespace(parser);
+        if (peek(parser) == '@') {
+            int saved_position = parser->position;
+            next(parser); // Skip '@'
+            char attr[NANO_MAX_IDENT_LENGTH];
+            parse_identifier(parser, attr, false);
+            parser->position = saved_position;
+
+            if (strcmp(attr, "group") == 0) {
+                parse_binding(parser, info);
+            } else if (strcmp(attr, "compute") == 0 ||
+                       strcmp(attr, "vertex") == 0 ||
+                       strcmp(attr, "fragment") == 0) {
+                parse_entry_point(parser, info);
+            } else {
+                next(parser); // Skip unrecognized attribute
+            }
+        } else {
+            next(parser); // Skip other tokens
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
 
 // Nano State Declarations & Static Definition
 // -------------------------------------------
@@ -1081,17 +1463,20 @@ void nano_shader_release(nano_shader_pool_t *table, uint32_t shader_id) {
 
 // Function to set the font for the ImGui context
 void nano_set_font(int index) {
-    if (index < 0 || index >= NANO_NUM_FONTS) {
+    if (index < 0 || index >= NANO_MAX_FONTS) {
         LOG_ERR("NANO: nano_set_font() -> Invalid font index\n");
         return;
     }
 
+    LOG("NANO: Setting font to %s\n", nano_app.font_info.fonts[index].name);
+
+// Handle the font setting for cimgui
+#ifdef NANO_CIMGUI
     if (&(nano_app.font_info.fonts[index].imfont) == NULL) {
         LOG_ERR("NANO: nano_set_font() -> Font is NULL\n");
         return;
     }
 
-    LOG("NANO: Setting font to %s\n", nano_app.font_info.fonts[index].name);
     ImGuiIO *io = igGetIO();
 
     // Set the font as the default font
@@ -1099,13 +1484,23 @@ void nano_set_font(int index) {
 
     LOG("NANO: Set font to %s\n",
         nano_app.font_info.fonts[index].imfont->ConfigData->Name);
-
-    // TODO: FIGURE OUT DPI SCALING FOR WEBGPU
-    // io->FontGlobalScale = sapp_dpi_scale();
+#endif
 }
 
 // Function to initialize the fonts for the ImGui context
 void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
+    if (font_info->font_count == 0) {
+        LOG("NANO: nano_init_fonts() -> No Custom Fonts Assigned: Using "
+            "Default ImGui Font.\n\t\tDid you forget to define NANO_NUM_FONTS "
+            "> 0?");
+        return;
+    }
+
+    // Set the app state font info to whatever is passed in
+    memcpy(&nano_app.font_info, font_info, sizeof(nano_font_info_t));
+
+// We only care about the ImFont if we are using cimgui
+#ifdef NANO_CIMGUI
 
     ImGuiIO *io = igGetIO();
 
@@ -1113,11 +1508,8 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
     // time we have to update the fonts for rendering.
     ImFontAtlas_Clear(io->Fonts);
 
-    // Set the app state font info to whatever is passed in
-    memcpy(&nano_app.font_info, font_info, sizeof(nano_font_info_t));
-
     // Iterate through the fonts and add them to the font atlas
-    for (int i = 0; i < NANO_NUM_FONTS; i++) {
+    for (int i = 0; i < font_info->font_count; i++) {
         nano_font_t *cur_font = &nano_app.font_info.fonts[i];
         cur_font->imfont = ImFontAtlas_AddFontFromMemoryTTF(
             io->Fonts, (void *)cur_font->ttf, cur_font->ttf_len, font_size,
@@ -1126,6 +1518,7 @@ void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
                 strlen(cur_font->name));
         LOG("NANO: Added ImGui Font: %s\n", cur_font->imfont->ConfigData->Name);
     }
+#endif
 
     // Whenever we reach this point, we can assume that the font size has been
     // updated
@@ -1169,7 +1562,7 @@ int nano_parse_shader(char *source, nano_shader_t *shader) {
     }
 
     // Initialize the parser with the shader source code
-    Parser parser;
+    nano_wgsl_parser_t parser;
     init_parser(&parser, source);
 
     shader->info.binding_count = 0;
@@ -1335,15 +1728,15 @@ int nano_build_pipeline_layout(nano_shader_t *shader) {
     int num_groups = 0;
 
     // Create an array of bind group layouts for each group
-    WGPUBindGroupLayout bg_layouts[MAX_GROUPS];
-    if (info->binding_count >= MAX_GROUPS * MAX_BINDINGS) {
+    WGPUBindGroupLayout bg_layouts[NANO_MAX_GROUPS];
+    if (info->binding_count >= NANO_MAX_GROUPS * NANO_GROUP_MAX_BINDINGS) {
         LOG_ERR("NANO: Shader %u: Too many bindings\n", info->id);
         return NANO_FAIL;
     }
 
     // Initialize the group binding indices array to -1
-    for (int i = 0; i < MAX_GROUPS; i++) {
-        for (int j = 0; j < MAX_BINDINGS; j++) {
+    for (int i = 0; i < NANO_MAX_GROUPS; i++) {
+        for (int j = 0; j < NANO_GROUP_MAX_BINDINGS; j++) {
             info->group_indices[i][j] = -1;
         }
     }
@@ -1360,15 +1753,15 @@ int nano_build_pipeline_layout(nano_shader_t *shader) {
     }
 
     // Iterate through the groups and create the bind group layout
-    for (int i = 0; i < MAX_GROUPS; i++) {
+    for (int i = 0; i < NANO_MAX_GROUPS; i++) {
 
         // Bind group layout entries for the group
-        WGPUBindGroupLayoutEntry bgl_entries[MAX_BINDINGS];
+        WGPUBindGroupLayoutEntry bgl_entries[NANO_GROUP_MAX_BINDINGS];
         int num_bindings = 0;
 
         // Iterate through the bindings in the group and create the bind
         // group layout entries
-        for (int j = 0; j < MAX_BINDINGS; j++) {
+        for (int j = 0; j < NANO_GROUP_MAX_BINDINGS; j++) {
             int index = info->group_indices[i][j];
 
             // If the index is -1, we can break out of the loop early since we
@@ -1719,21 +2112,21 @@ WGPUBindGroup nano_get_bindgroup(nano_shader_t *shader, int group) {
 }
 
 // Find the indices of the entry points in the shader info struct
-ShaderIndices nano_precompute_entry_indices(nano_shader_t *shader) {
+wgsl_shader_indices_t nano_precompute_entry_indices(nano_shader_t *shader) {
     if (shader == NULL) {
         LOG_ERR("NANO: nano_precompute_entry_indices() -> Shader is NULL\n");
-        return (ShaderIndices){-1, -1, -1};
+        return (wgsl_shader_indices_t){-1, -1, -1};
     }
 
     nano_shader_info_t *info = &shader->info;
     if (info == NULL) {
         LOG_ERR("NANO: nano_precompute_entry_indices() -> Shader info is "
                 "NULL\n");
-        return (ShaderIndices){-1, -1, -1};
+        return (wgsl_shader_indices_t){-1, -1, -1};
     }
 
     // -1 means no entry point found
-    ShaderIndices indices = {-1, -1, -1};
+    wgsl_shader_indices_t indices = {-1, -1, -1};
 
     // Iterate through the entry points and find the index of the
     // entry point in the shader info struct
@@ -2245,7 +2638,10 @@ static void nano_default_init(void) {
     nano_app.wgpu = wgpu_get_state();
 
     // Set the fonts
-    nano_init_fonts(&nano_fonts, 16.0f);
+    if (nano_fonts.font_count != 0)
+        nano_init_fonts(&nano_fonts, 16.0f);
+    else
+        nano_init_fonts(NULL, 16.0f);
 
     nano_app.settings = nano_default_settings();
 
@@ -2649,10 +3045,12 @@ static WGPUCommandEncoder nano_start_frame() {
     nano_app.wgpu->width = wgpu_width();
     nano_app.wgpu->height = wgpu_height();
 
+#ifdef NANO_CIMGUI
     // Set the display size for ImGui
     ImGuiIO *io = igGetIO();
     io->DisplaySize =
         (ImVec2){(float)nano_app.wgpu->width, (float)nano_app.wgpu->height};
+#endif
 
     // Get the frame time and calculate the frames per second with
     // delta time

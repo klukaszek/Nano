@@ -3,18 +3,21 @@
 #include <time.h>
 #include <unistd.h>
 
+// Include fonts as header files
+#include "JetBrainsMonoNerdFontMono-Bold.h"
+#include "LilexNerdFontMono-Medium.h"
+#include "Roboto-Regular.h"
+
 #define NANO_DEBUG
 #define NANO_CIMGUI
+// Number of custom fonts to load before starting the application
+#define NANO_NUM_FONTS 3
+
 // #define NANO_CIMGUI_DEBUG
 #include "nano.h"
 #include "nano_web.h"
 
-// // Debug WGPU Backend Implementation
-// // Define this to enable seeing the WGPU logs.
-// // Useful for checking what WGPU objects are failing if they are properly
-// // labelled.
-#define WGPU_BACKEND_DEBUG
-
+// Include the cimgui header file so we can use imgui with nano
 #include "cimgui/cimgui.h"
 
 // Custom data example for loading into the compute shader
@@ -294,9 +297,47 @@ static void shutdown(void) { nano_default_cleanup(); }
 
 // Program Entry Point
 int main(int argc, char *argv[]) {
+
+    // Add the custom fonts we wish to read from our font header files
+    // This is not necessary, it is just an example of how to add custom fonts.
+    // Note that fonts cannot be added after wgpu_start() is called. I could
+    // probably find a way to add fonts after wgpu_start() is called, but you
+    // should probably just load all your fonts once at the beginning of the
+    // program unless they are memory intensive.
+    if (NANO_NUM_FONTS > 0) {
+        LOG("DEMO: Adding custom fonts\n");
+        nano_font_t custom_fonts[NANO_NUM_FONTS] = {
+            // Font 0
+            {
+                .ttf = JetBrainsMonoNerdFontMono_Bold_ttf,
+                .ttf_len = sizeof(JetBrainsMonoNerdFontMono_Bold_ttf),
+                .name = "JetBrains Mono Nerd",
+            },
+            // Font 1
+            {
+                .ttf = LilexNerdFontMono_Medium_ttf,
+                .ttf_len = sizeof(LilexNerdFontMono_Medium_ttf),
+                .name = "Lilex Nerd Font",
+            },
+            // Font 2
+            {
+                .ttf = Roboto_Regular_ttf,
+                .ttf_len = sizeof(Roboto_Regular_ttf),
+                .name = "Roboto",
+            },
+        };
+
+        // Add the custom fonts to the nano_fonts struct
+        memcpy(nano_fonts.fonts, custom_fonts,
+               NANO_NUM_FONTS * sizeof(nano_font_t));
+
+        // nano_fonts.font_size = 16.0f; // Default font size
+        // nano_fonts.font_index = 0; // Default font
+    }
+
     // Start a new WGPU application
-    wgpu_start(&(wgpu_desc_t){
-        .title = "Nano Basic Demo",
+    nano_start_app(&(nano_app_desc_t){
+        .title = "Nano Triangle Demo",
         .res_x = 1920,
         .res_y = 1080,
         .init_cb = init,

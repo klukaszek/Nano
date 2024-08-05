@@ -18,7 +18,6 @@ add_subdirectory(include)
 include_directories(
     include 
     include/cimgui 
-    include/wgsl-parser
     include/cglm
     include/cglm/include
     include/assets/fonts
@@ -28,9 +27,6 @@ include_directories(
 # Find the shared cimgui library
 find_library(CIMGUI_LIBRARY NAMES cimgui PATHS ${CMAKE_SOURCE_DIR}/include/cimgui/)
 
-# Find the wgsl-parser library
-find_library(WGSL_PARSER_LIBRARY NAMES wgsl-parser PATHS ${CMAKE_SOURCE_DIR}/include/wgsl-parser/)
-
 # Find the cglm library
 find_library(CGLM_LIBRARY NAMES cglm PATHS ${CMAKE_SOURCE_DIR}/include/cglm/)
 
@@ -38,10 +34,9 @@ find_library(CGLM_LIBRARY NAMES cglm PATHS ${CMAKE_SOURCE_DIR}/include/cglm/)
 add_library(Nano STATIC ${SOURCES})
 
 # Link the Nano library with necessary dependencies
-add_dependencies(Nano cimgui wgsl-parser)
+add_dependencies(Nano cimgui)
 target_link_libraries(Nano
     cimgui
-    wgsl-parser
     # cglm
 )
 

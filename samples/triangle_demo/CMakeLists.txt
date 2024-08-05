@@ -13,6 +13,7 @@ set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/include/
+            ${CMAKE_SOURCE_DIR}/include/assets/
             )
 
 set(FILES triangle_demo.c ../../nano.h)
