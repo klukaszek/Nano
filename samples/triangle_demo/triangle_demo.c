@@ -10,6 +10,7 @@
 
 #define NANO_DEBUG
 #define NANO_CIMGUI
+
 // Number of custom fonts to load before starting the application
 #define NANO_NUM_FONTS 3
 

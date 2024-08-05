@@ -97,6 +97,8 @@
     #include "nano_native.h"
 #endif
 
+#define NANO_CIMGUI
+
 // Include CImGui for Nano
 // Assumes that nano_cimgui.h & cimgui.h are in the include path
 // and cimgui should be available as a static or shared library
@@ -106,8 +108,8 @@
     #include <cimgui.h>
 #endif
 
+// Nano Debugging
 #define LOG_ERR(...) fprintf(stderr, __VA_ARGS__)
-
 #ifndef NANO_DEBUG
     #define NANO_DEBUG_UI 0
     #define LOG(...)
@@ -116,6 +118,13 @@
     #define LOG(...) fprintf(stdout, __VA_ARGS__)
 #endif
 
+// Total number of fonts included in nano
+#define NANO_MAX_FONTS 16
+#ifndef NANO_NUM_FONTS
+    #define NANO_NUM_FONTS 0
+#endif
+
+// Nano Return Codes
 #define NANO_FAIL -1
 #define NANO_OK 0
 
@@ -308,6 +317,19 @@ typedef struct nano_buffer_data_t {
     void *data;
 } nano_buffer_data_t;
 
+// Represents data that is copied from the GPU to the CPU
+// See: nano_copy_buffer_to_cpu()
+typedef struct nano_gpu_data_t {
+    bool locked;
+    size_t size;
+    WGPUBuffer src;
+    size_t src_offset;
+    // The destination pointer for the data
+    void *data;
+    size_t dst_offset;
+    WGPUBuffer _staging;
+} nano_gpu_data_t;
+
 // Contains the information that is parsed from the shader source
 // for each binding in the shader
 typedef struct {
@@ -459,12 +481,6 @@ typedef struct nano_shader_pool_t {
 // Nano Font Declarations
 // -------------------------------------------
 
-// Total number of fonts included in nano
-#define NANO_MAX_FONTS 16
-#ifndef NANO_NUM_FONTS
-    #define NANO_NUM_FONTS 0
-#endif
-
 typedef struct nano_font_t {
     const unsigned char *ttf;
     size_t ttf_len;
@@ -494,6 +510,66 @@ static nano_font_info_t nano_fonts = {
     .font_size = 16.0f,
     .update_font = false,
 };
+
+typedef struct nano_gfx_settings_t {
+
+    struct msaa_t {
+        uint8_t sample_count;
+        bool msaa_changed;
+        uint8_t msaa_values[2];
+        const char *msaa_options[2];
+        uint8_t msaa_index;
+    } msaa;
+
+} nano_gfx_settings_t;
+
+typedef struct nano_settings_t {
+    nano_gfx_settings_t gfx;
+} nano_settings_t;
+
+// Nano State Declarations & Static Definition
+// -------------------------------------------
+
+// Desc is part of the State struct
+// A Desc is initialized at startup and is used to create the State
+typedef wgpu_desc_t nano_app_desc_t;
+
+// State contains necessary WGPU information for drawing and computing
+typedef wgpu_state_t nano_wgpu_state_t;
+
+// This is the struct that will hold all of the running application data
+// In simple terms, this is the state of the application
+typedef struct nano_t {
+    nano_wgpu_state_t *wgpu;
+    bool show_debug;
+    float frametime;
+    float fps;
+    nano_font_info_t font_info;
+    nano_shader_pool_t shader_pool;
+    nano_settings_t settings;
+} nano_t;
+
+// Initialize a static nano_t struct to hold the running application data
+static nano_t nano_app = {
+    .wgpu = 0,
+    .show_debug = NANO_DEBUG_UI,
+    .frametime = 0.0f,
+    .fps = 0.0f,
+    .font_info = {0},
+    .shader_pool = {0},
+    .settings = {0},
+};
+
+// Start the Nano application with the given app description
+// THIS IS THE MAIN ENTRY POINT FOR NANO
+int nano_start_app(nano_app_desc_t *desc) {
+
+    // Call wgpu_start() with the WGPU description
+    // wgpu_start() should be defined in nano_web.h or nano_native.h
+    wgpu_start((wgpu_desc_t *)desc);
+
+    return NANO_OK;
+}
 
 // -------------------------------------------------------------------------------------------
 
@@ -753,85 +829,6 @@ void parse_shader(nano_wgsl_parser_t *parser, nano_shader_info_t *info) {
 
 // -------------------------------------------------------------------------------------------
 
-// Nano State Declarations & Static Definition
-// -------------------------------------------
-
-// Desc is part of the State struct
-// A Desc is initialized at startup and is used to create the State
-typedef wgpu_desc_t nano_app_desc_t;
-
-// State contains necessary WGPU information for drawing and computing
-typedef wgpu_state_t nano_wgpu_state_t;
-
-typedef struct nano_gfx_settings_t {
-
-    struct msaa_t {
-        uint8_t sample_count;
-        bool msaa_changed;
-        uint8_t msaa_values[2];
-        const char *msaa_options[2];
-        uint8_t msaa_index;
-    } msaa;
-
-} nano_gfx_settings_t;
-
-typedef struct nano_settings_t {
-    nano_gfx_settings_t gfx;
-} nano_settings_t;
-
-nano_gfx_settings_t nano_default_gfx_settings() {
-    return (nano_gfx_settings_t){
-        .msaa =
-            {
-                .sample_count = 1,
-                .msaa_changed = false,
-                .msaa_values = {1, 4},
-                .msaa_options = {"Off", "4x MSAA"},
-                .msaa_index = 0,
-            },
-    };
-}
-
-nano_settings_t nano_default_settings() {
-    return (nano_settings_t){
-        .gfx = nano_default_gfx_settings(),
-    };
-}
-
-// This is the struct that will hold all of the running application data
-// In simple terms, this is the state of the application
-typedef struct nano_t {
-    nano_wgpu_state_t *wgpu;
-    bool show_debug;
-    float frametime;
-    float fps;
-    nano_font_info_t font_info;
-    nano_shader_pool_t shader_pool;
-    nano_settings_t settings;
-} nano_t;
-
-// Initialize a static nano_t struct to hold the running application data
-static nano_t nano_app = {
-    .wgpu = 0,
-    .show_debug = NANO_DEBUG_UI,
-    .frametime = 0.0f,
-    .fps = 0.0f,
-    .font_info = {0},
-    .shader_pool = {0},
-    .settings = {0},
-};
-
-// Start the Nano application with the given app description
-// THIS IS THE MAIN ENTRY POINT FOR NANO
-int nano_start_app(nano_app_desc_t *desc) {
-
-    // Call wgpu_start() with the WGPU description
-    // wgpu_start() should be defined in nano_web.h or nano_native.h
-    wgpu_start((wgpu_desc_t *)desc);
-
-    return NANO_OK;
-}
-
 // Misc Functions
 // -------------------------------------------------
 
@@ -855,6 +852,30 @@ uint32_t nano_hash_shader(const char *shader) { return fnv1a_32(shader); }
 
 // Toggle flag to show debug UI
 void nano_toggle_debug() { nano_app.show_debug = !nano_app.show_debug; }
+
+// Settings Functions
+// -------------------------------------------------
+
+// Return the default Nano graphics settings
+nano_gfx_settings_t nano_default_gfx_settings() {
+    return (nano_gfx_settings_t){
+        .msaa =
+            {
+                .sample_count = 1,
+                .msaa_changed = false,
+                .msaa_values = {1, 4},
+                .msaa_options = {"Off", "4x MSAA"},
+                .msaa_index = 0,
+            },
+    };
+}
+
+// Return the default Nano settings
+nano_settings_t nano_default_settings() {
+    return (nano_settings_t){
+        .gfx = nano_default_gfx_settings(),
+    };
+}
 
 // File IO
 // -----------------------------------------------
@@ -1097,18 +1118,6 @@ size_t nano_get_buffer_size(nano_shader_t *shader, uint8_t group,
     // Return the buffer size from the binding info struct
     return info->bindings[index].size;
 }
-
-// Represents the action to take when mapping a buffer for reading or writing
-typedef struct nano_gpu_data_t {
-    bool locked;
-    size_t size;
-    WGPUBuffer src;
-    size_t src_offset;
-    // The destination pointer for the data
-    void *data;
-    size_t dst_offset;
-    WGPUBuffer _staging;
-} nano_gpu_data_t;
 
 // Copy the contents of one WGPUBuffer to another WGPUBuffer
 int nano_copy_buffer_to_buffer(WGPUBuffer src, size_t src_offset,
@@ -1487,7 +1496,7 @@ void nano_set_font(int index) {
 #endif
 }
 
-// Function to initialize the fonts for the ImGui context
+// Function to initialize the fonts for Nano and the ImGui context
 void nano_init_fonts(nano_font_info_t *font_info, float font_size) {
     if (font_info->font_count == 0) {
         LOG("NANO: nano_init_fonts() -> No Custom Fonts Assigned: Using "
@@ -1815,11 +1824,6 @@ int nano_build_pipeline_layout(nano_shader_t *shader) {
             LOG("NANO: Shader %u: Creating bind group layout for group "
                 "%d with %d entries\n",
                 info->id, num_groups, num_bindings);
-
-            // // If the bind group layout is not NULL, we can release it
-            // if (bg_layouts[i] != 0) {
-            //     wgpuBindGroupLayoutRelease(bg_layouts[i]);
-            // }
 
             // Assign the bind group layout to the bind group layout
             // array so that we can create the
@@ -2826,8 +2830,28 @@ static void nano_draw_debug_ui() {
             nano_font_info_t *font_info = &nano_app.font_info;
             igText("Font Index: %d", font_info->font_index);
             igText("Font Size: %.2f", font_info->font_size);
-            char font_names[] = "JetBrains Mono Nerd Font\0Lilex Nerd "
-                                "Font\0Roboto\0";
+            
+            // Get the font names for the combo box as a single string
+            char font_names[NANO_NUM_FONTS * 41] = {};
+            for (int i = 0; i < NANO_NUM_FONTS; i++) {
+                strncat(&font_names[i], nano_fonts.fonts[i].name, 40);
+                // We have to add a ? to separate the strings
+                // until we can replace them with \0
+                //
+                // strncat will replace the previous \0 with the first character
+                // of the copied string so we can use this to separate the strings.
+                strncat(&font_names[i], "?", 1);
+            }
+
+            // Replace all ? with \0 to separate the strings
+            for (int i = 0; i < NANO_NUM_FONTS * 41; i++) {
+                if (font_names[i] == '?') {
+                    font_names[i] = '\0';
+                } else if (font_names[i] == '\0') {
+                    break;
+                }
+            }
+
             if (igCombo_Str("Select Font", (int *)&font_info->font_index,
                             font_names, 3)) {
                 nano_set_font(font_info->font_index);
