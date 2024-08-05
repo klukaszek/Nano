@@ -7,7 +7,7 @@
 #define NANO_CIMGUI
 // #define NANO_CIMGUI_DEBUG
 #include "nano.h"
-#include "wgpu_entry.h"
+#include "nano_web.h"
 
 // // Debug WGPU Backend Implementation
 // // Define this to enable seeing the WGPU logs.

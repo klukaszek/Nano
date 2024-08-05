@@ -1,5 +1,5 @@
-#ifndef WGPU_ENTRY_H
-#define WGPU_ENTRY_H
+#ifndef NANO_WEB_H
+#define NANO_WEB_H
 #include <assert.h>
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -890,4 +890,4 @@ void wgpu_stop(void) {
     nano_cimgui_shutdown();
 #endif
 }
-#endif // WGPU_ENTRY_H
+#endif // NANO_WEB_H

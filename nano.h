@@ -3,16 +3,32 @@
 //  version 0.2.0 (2024-06-30)
 //  author: Kyle Lukaszek
 //  --------------------------------------------------------------------
-//  CIMGUI + WebGPU Application Framework
+//  C WebGPU Application Framework
 //  --------------------------------------------------------------------
+//
 //  C Application framework for creating 2D/3D applications
-//  using WebGPU and CImGui. This header file includes the necessary
+//  using WebGPU. This header file includes the necessary
 //  functions and data structures to create a simple application.
 //
-//  --------------------------------------------------------------------
-//  To create a new application, simply include this header file in your
-//  main.c file and define the following functions and macros:
+//  Necessary files for Nano:
+//  - nano_web.h: Web entry point for Nano
+//      OR
+//  - nano_native.h: Native entry point for Nano
 //
+//  Nano comes with extra headers for additional functionality:
+//  - nano_cimgui.h: CImGui integration for Nano
+//      - Requires cimgui library to be included and linked in the build
+//
+//  These headers can be included by defining the preprocessor definitions:
+//  - #define NANO_CIMGUI
+//
+//  --------------------------------------------------------------------
+//
+//  To create a new application, simply include this header file, the entry
+//  header file (nano_web.h or nano_native.h) in your project, and include a
+//  main.c file with the following code:
+//
+// ```c
 // #include "nano.h"
 //
 // static void init(void) { nano_default_init(); }
@@ -31,7 +47,7 @@
 // static void shutdown(void) { nano_default_cleanup(); }
 //
 // int main(int argc, char *argv[]) {
-//     wgpu_start(&(wgpu_desc_t){
+//     nano_start_app(&(nano_app_desc_t){
 //         .title = "Solid Color Demo",
 //         .width = 640,
 //         .height = 480,
@@ -42,6 +58,18 @@
 //     });
 //     return 0;
 // }
+// ```
+//
+// If you want to use CImGui, you can include nano_cimgui.h in your project
+// and clone cimgui from the official repository: https://github.com/cimgui/cimgui
+// 
+// Once you have cloned cimgui, and compiled the library, you can add the following
+// preprocessor definition to your project above the include for nano.h:
+//
+//  - #define NANO_CIMGUI
+//
+// 
+//
 // ------------------------------------------------------------------
 
 // TODO: Test render pipeline creation in the shader pool
@@ -61,22 +89,27 @@
 #define NANO_H
 
 #include "webgpu.h"
-#include "wgpu_entry.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <webgpu/webgpu.h>
 #include <wgsl-parser.h>
 
+// Use web based entry point for Nano
+// if NANO_NATIVE is not defined
+#ifndef NANO_NATIVE
+    #include "nano_web.h"
+#else
+    #include "nano_native.h"
+#endif
+
+// Include CImGui for Nano
+// Assumes that nano_cimgui.h & cimgui.h are in the include path
+// and cimgui should be available as a static or shared library
 #ifdef NANO_CIMGUI
     #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
     #include "nano_cimgui.h"
     #include <cimgui.h>
-#endif
-
-#ifdef NANO_CGLM
-    // Include cglm for matrix and vector operations
-    #include <cglm/struct.h>
 #endif
 
 #define LOG_ERR(...) fprintf(stderr, __VA_ARGS__)
@@ -341,6 +374,11 @@ static nano_font_info_t nano_fonts = {
 // Nano State Declarations & Static Definition
 // -------------------------------------------
 
+// Desc is part of the State struct
+// A Desc is initialized at startup and is used to create the State
+typedef wgpu_desc_t nano_app_desc_t;
+
+// State contains necessary WGPU information for drawing and computing
 typedef wgpu_state_t nano_wgpu_state_t;
 
 typedef struct nano_gfx_settings_t {
@@ -400,6 +438,17 @@ static nano_t nano_app = {
     .shader_pool = {0},
     .settings = {0},
 };
+
+// Start the Nano application with the given app description
+// THIS IS THE MAIN ENTRY POINT FOR NANO
+int nano_start_app(nano_app_desc_t *desc) {
+
+    // Call wgpu_start() with the WGPU description
+    // wgpu_start() should be defined in nano_web.h or nano_native.h
+    wgpu_start((wgpu_desc_t *)desc);
+
+    return NANO_OK;
+}
 
 // Misc Functions
 // -------------------------------------------------
@@ -1041,9 +1090,8 @@ void nano_set_font(int index) {
         LOG_ERR("NANO: nano_set_font() -> Font is NULL\n");
         return;
     }
-    
-    LOG("NANO: Setting font to %s\n",
-        nano_app.font_info.fonts[index].name);
+
+    LOG("NANO: Setting font to %s\n", nano_app.font_info.fonts[index].name);
     ImGuiIO *io = igGetIO();
 
     // Set the font as the default font
@@ -2600,7 +2648,7 @@ static WGPUCommandEncoder nano_start_frame() {
     // Update the dimensions of the window
     nano_app.wgpu->width = wgpu_width();
     nano_app.wgpu->height = wgpu_height();
-    
+
     // Set the display size for ImGui
     ImGuiIO *io = igGetIO();
     io->DisplaySize =
