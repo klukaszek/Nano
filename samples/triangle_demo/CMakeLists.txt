@@ -13,14 +13,13 @@ set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 include_directories(
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/include/
-            ${CMAKE_SOURCE_DIR}/include/assets/
             )
 
-set(FILES triangle_demo.c ../../nano.h)
+set(FILES triangle_demo.c)
 
 # Add the triangle_demo executable 
 add_executable(triangle_demo ${FILES})
-target_link_libraries(triangle_demo Nano)
+target_link_libraries(triangle_demo cimgui)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(triangle_demo PROPERTIES

@@ -16,7 +16,7 @@ set(FILES clear_demo.c)
 
 # Add the clear_demo executable 
 add_executable(clear_demo ${FILES})
-target_link_libraries(clear_demo Nano)
+target_link_libraries(clear_demo cimgui)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(clear_demo PROPERTIES

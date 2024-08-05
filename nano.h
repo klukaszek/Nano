@@ -128,6 +128,7 @@
 #define NANO_FAIL -1
 #define NANO_OK 0
 
+// Parser and Shader Definitions
 #define NANO_MAX_IDENT_LENGTH 256 // Maximum length of an identifier parsed
 #define NANO_MAX_ENTRIES 3        // Compute, Vertex, Fragment
 #define NANO_MAX_GROUPS 4         // Maximum number of bind groups
@@ -576,27 +577,33 @@ int nano_start_app(nano_app_desc_t *desc) {
 // Nano WGSL Parser Functions
 // ---------------------------------------
 
+// Initialize the parser with the shader source
 void init_parser(nano_wgsl_parser_t *parser, const char *input) {
     parser->input = input;
     parser->position = 0;
 }
 
+// Peek at the next character in the input
 char peek(nano_wgsl_parser_t *parser) {
     return parser->input[parser->position];
 }
 
+// Get the next character in the input
 char next(nano_wgsl_parser_t *parser) {
     return parser->input[parser->position++];
 }
 
+// Check if the parser has reached the end of the input
 int is_eof(nano_wgsl_parser_t *parser) { return peek(parser) == '\0'; }
 
+// Skip whitespace in the input
 void skip_whitespace(nano_wgsl_parser_t *parser) {
     while (isspace(peek(parser))) {
         next(parser);
     }
 }
 
+// Parse a number from the input
 int parse_number(nano_wgsl_parser_t *parser) {
     int result = 0;
     while (isdigit(peek(parser))) {
@@ -605,6 +612,7 @@ int parse_number(nano_wgsl_parser_t *parser) {
     return result;
 }
 
+// Parse an identifier from the wgsl input
 void parse_identifier(nano_wgsl_parser_t *parser, char *ident, bool is_type) {
     int i = 0;
     if (!is_type) {
@@ -625,6 +633,7 @@ void parse_identifier(nano_wgsl_parser_t *parser, char *ident, bool is_type) {
     ident[i] = '\0';
 }
 
+// Parse the storage class and access flags for a buffer binding
 WGPUFlags parse_storage_class_and_access(nano_wgsl_parser_t *parser) {
     WGPUFlags flags = WGPUBufferUsage_None;
     char identifier[NANO_MAX_IDENT_LENGTH];
