@@ -236,11 +236,18 @@ static void init(void) {
     // Initialize the nano project
     nano_default_init();
 
+    WGPUSupportedLimits limits;
+    wgpuDeviceGetLimits(nano_app.wgpu->device, &limits);
+
+    LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
+    LOG("DEMO: Max Vertex Attributes: %u\n",
+        limits.limits.maxVertexAttributes);
+
     // Initialize the buffer pool for the compute backend
     nano_init_shader_pool(&nano_app.shader_pool);
 
     // Fragment and Vertex shader creation
-    char triangle_shader_name[] = "uv-triangle.wgsl";
+    char triangle_shader_name[] = "rgb-triangle.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
              triangle_shader_name);
 
@@ -249,16 +256,16 @@ static void init(void) {
     memcpy(shader_code, nano_read_file(shader_path), 8192);
     LOG("DEMO: Shader code:\n%s\n", shader_code);
 
-    // uint32_t triangle_shader_id =
-    //     nano_create_shader_from_file(shader_path, (char
-    //     *)triangle_shader_name);
-    // if (triangle_shader_id == NANO_FAIL) {
-    //     LOG("DEMO: Failed to create shader\n");
-    //     return;
-    // }
-    //
-    // triangle_shader =
-    //     nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
+    uint32_t triangle_shader_id =
+        nano_create_shader_from_file(shader_path, (char
+        *)triangle_shader_name);
+    if (triangle_shader_id == NANO_FAIL) {
+        LOG("DEMO: Failed to create shader\n");
+        return;
+    }
+
+    triangle_shader =
+        nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
 
     // Build and activate the compute shader
     // Once a shader is built, it can be activated and deactivated
@@ -267,7 +274,7 @@ static void init(void) {
     // will rebuild the shader.
     // This will build the pipeline layouts, bind groups, and necessary
     // pipelines.
-    // nano_shader_activate(triangle_shader, true);
+    nano_shader_activate(triangle_shader, true);
 }
 
 // Frame callback passed to wgpu_start()
@@ -279,13 +286,13 @@ static void frame(void) {
     WGPUCommandEncoder cmd_encoder = nano_start_frame();
 
     // Execute the shaders in the order that they were activated.
-    // nano_execute_shaders();
+    nano_execute_shaders();
 
-    render_triangle(cmd_encoder);
+    // render_triangle(cmd_encoder);
 
-    igBegin("Nano Triangle Demo", NULL, 0);
+    igBegin("Nano RGB Triangle Demo", NULL, 0);
 
-    igText("This is a simple triangle demo using Nano and WGPU.");
+    igText("This is a simple triangle demo using Nano.");
 
     igEnd();
 

@@ -133,6 +133,8 @@
 #define NANO_MAX_ENTRIES 3        // Compute, Vertex, Fragment
 #define NANO_MAX_GROUPS 4         // Maximum number of bind groups
 #define NANO_GROUP_MAX_BINDINGS 8 // Maximum number of bindings per group
+#define NANO_MAX_VERTEX_BUFFERS 8 // Maximum number of vertex buffers
+#define NANO_MAX_VERTEX_ATTRIBUTES 16 // Maximum cumulative vertex attributes
 
 // Maximum number of compute shaders that can be stored in the shader pool
 #define NANO_MAX_SHADERS 16
@@ -447,6 +449,9 @@ typedef struct nano_shader_t {
     // This is where we store buffer data and size so that Nano can
     // create the buffers for the shader bindings when the shader is loaded
     nano_buffer_data_t buffer_data[NANO_MAX_GROUPS][NANO_GROUP_MAX_BINDINGS];
+    nano_buffer_data_t vertex_buffer_data[NANO_MAX_VERTEX_BUFFERS];
+    uint8_t vertex_buffer_count;
+    uint8_t vertex_attribute_count;
 
     // Using the buffer size from the buffer data, we can create the bindgroups
     // so that we can bind the buffers to the shader pipeline
