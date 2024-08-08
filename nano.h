@@ -1309,8 +1309,7 @@ void nano_write_buffer(WGPUBuffer buffer, size_t offset, void *data,
     wgpuQueueWriteBuffer(wgpuDeviceGetQueue(nano_app.wgpu->device), buffer,
                          offset, data, size);
 
-    LOG("NANO: Buffer %p[-1] is %.4f\n", buffer,
-        ((float *)data)[size / sizeof(float) - 1]);
+    LOG("NANO: Wrote To WGPU Buffer %p\n", buffer);
 }
 
 // Callback to handle the mapped data
@@ -2395,7 +2394,7 @@ uint32_t nano_create_shader(const char *shader_source, char *label) {
     int slot = nano_find_shader_slot(&nano_app.shader_pool, shader_id);
     if (slot < 0) {
         LOG_ERR("NANO: Shader pool is full. Could not insert "
-                "shader %d\n",
+                "shader %u\n",
                 shader_id);
         return NANO_FAIL;
     }
@@ -2428,7 +2427,7 @@ uint32_t nano_create_shader(const char *shader_source, char *label) {
     // struct.
     int status = nano_validate_shader(&shader);
     if (status != NANO_OK) {
-        LOG_ERR("NANO: Failed to validate shader %d\n", shader_id);
+        LOG_ERR("NANO: Failed to validate shader %u\n", shader_id);
         return NANO_FAIL;
     }
 
@@ -2484,12 +2483,12 @@ int nano_shader_build(nano_shader_t *shader) {
         return NANO_FAIL;
     }
 
-    LOG("NANO: Building shader %d...\n", shader->id);
+    LOG("NANO: Building shader %u...\n", shader->id);
 
     // Verify that the shader can be parsed properly before building it
     int status = nano_validate_shader(shader);
     if (status != NANO_OK) {
-        LOG_ERR("NANO: Failed to validate shader %d\n", shader->id);
+        LOG_ERR("NANO: Failed to validate shader %u\n", shader->id);
         return NANO_FAIL;
     }
 
@@ -2498,33 +2497,33 @@ int nano_shader_build(nano_shader_t *shader) {
     // struct, we can call this method to make sure the shader is ready to
     // be executed.
 
-    LOG("NANO: Building bindings and pipeline layouts for shader %d...\n",
+    LOG("NANO: Building bindings and pipeline layouts for shader %u...\n",
         shader->id);
 
     // Build the pipeline layout
     status = nano_build_pipeline_layout(shader);
     if (status != NANO_OK) {
-        LOG_ERR("NANO: Failed to build pipeline layout for shader %d\n",
+        LOG_ERR("NANO: Failed to build pipeline layout for shader %u\n",
                 shader->info.id);
         return status;
     }
 
-    LOG("NANO: Building bindgroups for shader %d...\n", shader->id);
+    LOG("NANO: Building bindgroups for shader %u...\n", shader->id);
 
     // Build bind groups for the shader so we can bind the buffers
     status = nano_build_bindgroups(shader);
     if (status != NANO_OK) {
-        LOG_ERR("NANO: Failed to build bindgroup for shader %d\n",
+        LOG_ERR("NANO: Failed to build bindgroup for shader %u\n",
                 shader->info.id);
         return status;
     }
 
-    LOG("NANO: Building pipelines for shader %d...\n", shader->id);
+    LOG("NANO: Building pipelines for shader %u...\n", shader->id);
 
     // Build the shader pipelines
     status = nano_build_shader_pipelines(shader);
     if (status != NANO_OK) {
-        LOG_ERR("NANO: Failed to build shader pipelines for shader %d\n",
+        LOG_ERR("NANO: Failed to build shader pipelines for shader %u\n",
                 shader->info.id);
         return 0;
     }
@@ -2544,7 +2543,7 @@ int nano_shader_activate(nano_shader_t *shader, bool build) {
         return NANO_FAIL;
     }
     if (shader->in_use) {
-        LOG_ERR("NANO: Shader %d is already active\n", shader->id);
+        LOG_ERR("NANO: Shader %u is already active\n", shader->id);
         return NANO_OK;
     }
 
@@ -2553,7 +2552,7 @@ int nano_shader_activate(nano_shader_t *shader, bool build) {
     if (!shader->built || build) {
         int status = nano_shader_build(shader);
         if (status != NANO_OK) {
-            LOG_ERR("NANO: Failed to build shader %d\n", shader->id);
+            LOG_ERR("NANO: Failed to build shader %u\n", shader->id);
             return NANO_FAIL;
         }
     }
