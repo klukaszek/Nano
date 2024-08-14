@@ -271,17 +271,19 @@ static void init(void) {
     nano_shader_activate(compute_shader, true);
     nano_shader_activate(triangle_shader, true);
 
+    nano_binding_info_t *input_info = nano_shader_get_binding(compute_shader, 0, 0);
+
     // Get the input buffer from the shader
-    input_buffer = nano_get_gpu_buffer(compute_shader, 0, 0);
+    input_buffer = input_info->data.buffer;
+
+    nano_binding_info_t *output_info = nano_shader_get_binding(compute_shader, 0, 1);
 
     // Get the output buffer from the shader
-    output_buffer = nano_get_gpu_buffer(compute_shader, 0, 1);
-
-    nano_binding_info_t binding_info = nano_get_binding(compute_shader, 0, 0);
+    output_buffer = output_info->data.buffer;
 
     // Once our shader is completely built and we have a compute pipeline, we
     // can write the data to the input buffers to be used in the shader pass.
-    nano_write_buffer(input_buffer, 0, input_data, NUM_DATA * sizeof(Data));
+    nano_write_buffer(input_info, 0, input_data, NUM_DATA * sizeof(Data));
 
     // Define the gpu data struct that will be used to read the data back from
     // the GPU buffer
@@ -327,7 +329,7 @@ static void frame(void) {
     if (compute_shader->in_use && gpu_compute.locked == false) {
         // Deactivate the shader to avoid a
         // wgpuBufferGetMappedRange error when copying the data
-        nano_deactivate_shader(compute_shader);
+        nano_shader_deactivate(compute_shader);
 
         // Copy the output buffer to the gpu data struct
         int status = nano_copy_buffer_to_cpu(&gpu_compute, NULL);
@@ -384,7 +386,7 @@ static void frame(void) {
     }
 }
 
-// Shutdown callback passed to wgpu_start()
+// Shutdown callback passed to nano_start_app()
 static void shutdown(void) { nano_default_cleanup(); }
 
 // Program Entry Point

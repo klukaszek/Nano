@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -31,40 +32,19 @@ char SHADER_PATH[] = "/wgpu-shaders/%s";
 // Nano Application
 // ------------------------------------------------------
 
-WGPUShaderModule triangle_shader_module;
-WGPURenderPipeline triangle_pipeline;
-WGPUBuffer triangle_vertex_buffer;
-
-typedef struct {
-    float position[3];
-    float color[3];
-} Vertex;
-
-Vertex vertex_data[] = {
-    // positions            // colors
-    {{0.0f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-};
-
-// Create the vertex buffer layout
-WGPUVertexAttribute attributes[2] = {
-    {
-        .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(Vertex, position),
-        .shaderLocation = 0,
-    },
-    {
-        .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(Vertex, color),
-        .shaderLocation = 1,
-    },
-};
-
 // Nano shader structs for the compute and triangle shaders examples
-nano_shader_t *triangle_shader;
+nano_shader_t *wave_shader;
 char shader_path[256];
 char shader_code[8192];
+
+// When using the uniform buffer with Nano, if the shader is not working as
+// expected, you should use the @align(n) directive in the shader to align the
+// buffer in multiples of 16 bytes. See assets/shaders/dot.wgsl for an example.
+struct UniformBuffer {
+    float time;          // 4 bytes
+    float padding;       // 4 bytes
+    float resolution[2]; // 8 bytes
+} uniform_buffer;        // 16 bytes
 
 // Initialization callback passed to nano_start_app()
 static void init(void) {
@@ -85,30 +65,35 @@ static void init(void) {
     nano_init_shader_pool(&nano_app.shader_pool);
 
     // Fragment and Vertex shader creation
-    char triangle_shader_name[] = "rgb-triangle.wgsl";
-    snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
-             triangle_shader_name);
+    char wave_shader_name[] = "wave.wgsl";
+    snprintf(shader_path, sizeof(shader_path), SHADER_PATH, wave_shader_name);
 
-    nano_create_shader_from_file(shader_path, triangle_shader_name);
-
-    uint32_t triangle_shader_id =
-        nano_create_shader_from_file(shader_path, (char *)triangle_shader_name);
-    if (triangle_shader_id == NANO_FAIL) {
-        LOG("DEMO: Failed to create shader\n");
+    uint32_t wave_shader_id =
+        nano_create_shader_from_file(shader_path, wave_shader_name);
+    if (wave_shader_id == NANO_FAIL) {
+        LOG("Failed to create wave shader\n");
         return;
     }
 
-    // Get the shader from the shader pool
-    triangle_shader =
-        nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
+    wave_shader = nano_get_shader(&nano_app.shader_pool, wave_shader_id);
+    if (!wave_shader) {
+        LOG("Failed to get wave shader\n");
+        return;
+    }
 
-    // Assign the vertex buffer to the shader so that it can be compiled into
-    // the pipeline.
-    int status = nano_shader_create_vertex_buffer(
-        triangle_shader, (WGPUVertexAttribute *)&attributes, 2, sizeof(Vertex),
-        sizeof(vertex_data), &vertex_data);
-    if (status != NANO_OK) {
-        LOG("DEMO: Failed to create vertex buffer\n");
+    uniform_buffer.time = 0.0f;
+    uniform_buffer.resolution[0] = nano_app.wgpu->width;
+    uniform_buffer.resolution[1] = nano_app.wgpu->height;
+
+    // Set the vertex count for the shader (if we don't set this, it defaults to
+    // 3)
+    nano_shader_set_vertex_count(wave_shader, 3); // not needed in this case
+
+    // Assign the data to the uniform buffer
+    int status = nano_shader_assign_uniform_data(
+        wave_shader, 0, 0, &uniform_buffer, sizeof(uniform_buffer));
+    if (status == NANO_FAIL) {
+        LOG("Failed to assign uniform data\n");
         return;
     }
 
@@ -119,7 +104,7 @@ static void init(void) {
     // will rebuild the shader.
     // This will build the pipeline layouts, bind groups, and necessary
     // pipelines.
-    nano_shader_activate(triangle_shader, true);
+    nano_shader_activate(wave_shader, true);
 }
 
 // Frame callback passed to nano_start_app()
@@ -142,15 +127,18 @@ static void frame(void) {
     igSetNextWindowPos(
         (ImVec2){nano_app.wgpu->width - (nano_app.wgpu->width) * 0.5, 20},
         ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-    igBegin("Nano RGB Triangle Demo", NULL, 0);
-    igText(
-        "This is a simple triangle demo using Nano.\nThis window is being "
-        "created outside of nano.h from main.c.\nThis is to demonstrate that "
-        "Nano instantiates a complete ImGui instance for the WASM module.");
+    igBegin("Nano Wave Demo", NULL, 0);
+    igText("This demo shows how to use the fragment shader and a uniform "
+           "buffer to create a wave effect using WebGPU, WGSL, and Nano.");
     igEnd();
 
     // Change Nano app state at end of frame
     nano_end_frame();
+    
+    // Update the uniform buffer
+    uniform_buffer.resolution[0] = nano_app.wgpu->width;
+    uniform_buffer.resolution[1] = nano_app.wgpu->height;
+    uniform_buffer.time += 0.01f;
 }
 
 // Shutdown callback passed to nano_start_app()
@@ -196,7 +184,7 @@ int main(int argc, char *argv[]) {
     // This will initialize the WGPU instance with an MSAA TextureView
     // and create a swapchain for rendering.
     nano_start_app(&(nano_app_desc_t){
-        .title = "Nano Triangle Demo",
+        .title = "Nano Wave Demo",
         .res_x = 1920,
         .res_y = 1080,
         .init_cb = init,
