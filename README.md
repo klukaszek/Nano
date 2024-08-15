@@ -2,15 +2,17 @@
 
 ## Current Implementations
 
-- WGSL Compute Pipelines
+- WGPU Compute Pipelines
     - Input Buffers
     - Output Buffers
 
-- WGSL Render Pipelines
+- WGPU Render Pipelines
     - Input Buffers
     - Output Buffers
     - Vertex Buffers
     - Uniform Buffers
+
+- WGPU CImGui implementation
 
 ## Installation
 
@@ -31,6 +33,7 @@ emcmake cmake .
 # Compile
 make
 ```
+## Samples
 
 Samples can be found at https://kylelukaszek.xyz/Nano/DEMO_NAME/DEMO_NAME.html
 The list of demo names can be found in the Samples/ directory.
