@@ -1,4 +1,16 @@
-# Nano 0.3
+# Nano 0.4
+
+## Current Implementations
+
+- WGSL Compute Pipelines
+    - Input Buffers
+    - Output Buffers
+
+- WGSL Render Pipelines
+    - Input Buffers
+    - Output Buffers
+    - Vertex Buffers
+    - Uniform Buffers
 
 ## Installation
 
@@ -20,9 +32,20 @@ emcmake cmake .
 make
 ```
 
-Samples can be found as .html files within their respective directories.
+Samples can be found at https://kylelukaszek.xyz/Nano/DEMO_NAME/DEMO_NAME.html
+The list of demo names can be found in the Samples/ directory.
 
 ## Changelog
+
+### 0.4
+
+Implemented the WGPU RenderPipeline for parsed shaders in Nano. This also comes with the addition of Vertex Buffers and Uniform Buffers. With this version you can find several new demos for loading Vertex and Fragment shaders into a Nano project.
+
+I plan on releasing a much more in-depth post regarding how Nano is put together, but I might decide to do this as part of my undergraduate thesis, so don't hold your breath. This is very much just a passion project at the moment.
+
+For the next few versions I want to focus on refactoring the existing codebase to eliminate any redundencies that may have persisted between version changes.
+
+My TODO is telling me to look into a better way at managing fonts in Nano, ensuring that basic audio is something that can be controlled using Nano, and to create a ShaderToy-like playground as the version 1.0 de-facto demo.
 
 ### 0.3 
 Implemented shader buffer binding, pipeline layout, bind group, and pipeline generation from WGSL shader files. At the moment, simple compute shaders seem to be working as intended so I am going to take a short break and then get to work on parsing textures from WGSL and generating the appropriate bindings. Once that is complete, I can think about fully generating render pipelines from the shader.
