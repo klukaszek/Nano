@@ -93,9 +93,7 @@ timing_test_EXTERNAL_OBJECTS =
 
 samples/timing_test/timing_test.html: samples/timing_test/CMakeFiles/timing_test.dir/timing_test.c.o
 samples/timing_test/timing_test.html: samples/timing_test/CMakeFiles/timing_test.dir/build.make
-samples/timing_test/timing_test.html: libNano.a
 samples/timing_test/timing_test.html: include/cimgui/cimgui.a
-samples/timing_test/timing_test.html: include/wgsl-parser/libwgsl-parser.a
 samples/timing_test/timing_test.html: samples/timing_test/CMakeFiles/timing_test.dir/linkLibs.rsp
 samples/timing_test/timing_test.html: samples/timing_test/CMakeFiles/timing_test.dir/objects1.rsp
 samples/timing_test/timing_test.html: samples/timing_test/CMakeFiles/timing_test.dir/link.txt

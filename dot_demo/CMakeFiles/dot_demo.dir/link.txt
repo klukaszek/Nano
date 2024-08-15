@@ -1,0 +1,1 @@
+/home/runner/work/Nano/Nano/emsdk/upstream/emscripten/em++  -s ASSERTIONS --preload-file /home/runner/work/Nano/Nano/include/assets/shaders@/ -s INITIAL_MEMORY=50mb -s STACK_SIZE=32mb -s USE_WEBGPU=1 -O3  -o dot_demo.html --shell-file ../shell.html @CMakeFiles/dot_demo.dir/objects1.rsp -o dot_demo.html @CMakeFiles/dot_demo.dir/linkLibs.rsp

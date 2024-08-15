@@ -93,9 +93,7 @@ triangle_demo_EXTERNAL_OBJECTS =
 
 samples/triangle_demo/triangle_demo.html: samples/triangle_demo/CMakeFiles/triangle_demo.dir/triangle_demo.c.o
 samples/triangle_demo/triangle_demo.html: samples/triangle_demo/CMakeFiles/triangle_demo.dir/build.make
-samples/triangle_demo/triangle_demo.html: libNano.a
 samples/triangle_demo/triangle_demo.html: include/cimgui/cimgui.a
-samples/triangle_demo/triangle_demo.html: include/wgsl-parser/libwgsl-parser.a
 samples/triangle_demo/triangle_demo.html: samples/triangle_demo/CMakeFiles/triangle_demo.dir/linkLibs.rsp
 samples/triangle_demo/triangle_demo.html: samples/triangle_demo/CMakeFiles/triangle_demo.dir/objects1.rsp
 samples/triangle_demo/triangle_demo.html: samples/triangle_demo/CMakeFiles/triangle_demo.dir/link.txt

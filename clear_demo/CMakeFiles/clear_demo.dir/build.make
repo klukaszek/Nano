@@ -93,9 +93,7 @@ clear_demo_EXTERNAL_OBJECTS =
 
 samples/clear_demo/clear_demo.html: samples/clear_demo/CMakeFiles/clear_demo.dir/clear_demo.c.o
 samples/clear_demo/clear_demo.html: samples/clear_demo/CMakeFiles/clear_demo.dir/build.make
-samples/clear_demo/clear_demo.html: libNano.a
 samples/clear_demo/clear_demo.html: include/cimgui/cimgui.a
-samples/clear_demo/clear_demo.html: include/wgsl-parser/libwgsl-parser.a
 samples/clear_demo/clear_demo.html: samples/clear_demo/CMakeFiles/clear_demo.dir/linkLibs.rsp
 samples/clear_demo/clear_demo.html: samples/clear_demo/CMakeFiles/clear_demo.dir/objects1.rsp
 samples/clear_demo/clear_demo.html: samples/clear_demo/CMakeFiles/clear_demo.dir/link.txt

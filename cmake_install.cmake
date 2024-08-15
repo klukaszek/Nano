@@ -42,6 +42,8 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("/home/runner/work/Nano/Nano/samples/clear_demo/cmake_install.cmake")
   include("/home/runner/work/Nano/Nano/samples/timing_test/cmake_install.cmake")
   include("/home/runner/work/Nano/Nano/samples/triangle_demo/cmake_install.cmake")
+  include("/home/runner/work/Nano/Nano/samples/dot_demo/cmake_install.cmake")
+  include("/home/runner/work/Nano/Nano/samples/wave_demo/cmake_install.cmake")
 
 endif()
 
