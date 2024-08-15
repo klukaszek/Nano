@@ -91,9 +91,11 @@ static void init(void) {
     uniform_buffer.time = 0.0f;
     uniform_buffer.resolution[0] = nano_app.wgpu->width;
     uniform_buffer.resolution[1] = nano_app.wgpu->height;
+
+    // Wave parameters
     uniform_buffer.wave.freq = 5.0f;
     uniform_buffer.wave.amp = 0.5f;
-    uniform_buffer.wave.speed = 0.5f;
+    uniform_buffer.wave.speed = 0.2f;
     uniform_buffer.wave.thickness = 0.005f;
 
     // Set the vertex count for the shader (if we don't set this, it defaults to
@@ -163,7 +165,7 @@ static void frame(void) {
     // Update the uniform buffer
     uniform_buffer.resolution[0] = nano_app.wgpu->width;
     uniform_buffer.resolution[1] = nano_app.wgpu->height;
-    uniform_buffer.time += 0.01f;
+    uniform_buffer.time += 0.01;
 }
 
 // Shutdown callback passed to nano_start_app()
