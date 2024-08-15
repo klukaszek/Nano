@@ -12,7 +12,7 @@
     - Vertex Buffers
     - Uniform Buffers
 
-- WGPU CImGui implementation
+- WGPU CImGui
 
 ## Installation
 
