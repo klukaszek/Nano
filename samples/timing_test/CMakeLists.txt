@@ -15,7 +15,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Add the clear_demo executable 
 add_executable(timing_test timing_test.c)
-target_link_libraries(timing_test Nano)
+target_link_libraries(timing_test cimgui)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(timing_test PROPERTIES

@@ -5,11 +5,12 @@
 #define NANO_DEBUG
 #define NANO_CIMGUI
 
-// // Debug WGPU Backend Implementation
-// #define WGPU_BACKEND_DEBUG
+#define NANO_NUM_FONTS 3
 
-// // Debug WGPU + CIMGUI Implementation
-// #define NANO_CIMGUI_DEBUG
+// Include fonts as header files
+#include "JetBrainsMonoNerdFontMono-Bold.h"
+#include "LilexNerdFontMono-Medium.h"
+#include "Roboto-Regular.h"
 
 #include "nano.h"
 
@@ -270,17 +271,19 @@ static void init(void) {
     nano_shader_activate(compute_shader, true);
     nano_shader_activate(triangle_shader, true);
 
+    nano_binding_info_t *input_info = nano_shader_get_binding(compute_shader, 0, 0);
+
     // Get the input buffer from the shader
-    input_buffer = nano_get_gpu_buffer(compute_shader, 0, 0);
+    input_buffer = input_info->data.buffer;
+
+    nano_binding_info_t *output_info = nano_shader_get_binding(compute_shader, 0, 1);
 
     // Get the output buffer from the shader
-    output_buffer = nano_get_gpu_buffer(compute_shader, 0, 1);
-
-    nano_binding_info_t binding_info = nano_get_binding(compute_shader, 0, 0);
+    output_buffer = output_info->data.buffer;
 
     // Once our shader is completely built and we have a compute pipeline, we
     // can write the data to the input buffers to be used in the shader pass.
-    nano_write_buffer(input_buffer, 0, input_data, NUM_DATA * sizeof(Data));
+    nano_write_buffer(input_info, 0, input_data, NUM_DATA * sizeof(Data));
 
     // Define the gpu data struct that will be used to read the data back from
     // the GPU buffer
@@ -326,7 +329,7 @@ static void frame(void) {
     if (compute_shader->in_use && gpu_compute.locked == false) {
         // Deactivate the shader to avoid a
         // wgpuBufferGetMappedRange error when copying the data
-        nano_deactivate_shader(compute_shader);
+        nano_shader_deactivate(compute_shader);
 
         // Copy the output buffer to the gpu data struct
         int status = nano_copy_buffer_to_cpu(&gpu_compute, NULL);
@@ -383,14 +386,51 @@ static void frame(void) {
     }
 }
 
-// Shutdown callback passed to wgpu_start()
+// Shutdown callback passed to nano_start_app()
 static void shutdown(void) { nano_default_cleanup(); }
 
 // Program Entry Point
 int main(int argc, char *argv[]) {
 
+    // Add the custom fonts we wish to read from our font header files
+    // This is not necessary, it is just an example of how to add custom fonts.
+    // Note that fonts cannot be added after wgpu_start() is called. I could
+    // probably find a way to add fonts after wgpu_start() is called, but you
+    // should probably just load all your fonts once at the beginning of the
+    // program unless they are memory intensive.
+    if (NANO_NUM_FONTS > 0) {
+        LOG("DEMO: Adding custom fonts\n");
+        nano_font_t custom_fonts[NANO_NUM_FONTS] = {
+            // Font 0
+            {
+                .ttf = JetBrainsMonoNerdFontMono_Bold_ttf,
+                .ttf_len = sizeof(JetBrainsMonoNerdFontMono_Bold_ttf),
+                .name = "JetBrains Mono Nerd",
+            },
+            // Font 1
+            {
+                .ttf = LilexNerdFontMono_Medium_ttf,
+                .ttf_len = sizeof(LilexNerdFontMono_Medium_ttf),
+                .name = "Lilex Nerd Font",
+            },
+            // Font 2
+            {
+                .ttf = Roboto_Regular_ttf,
+                .ttf_len = sizeof(Roboto_Regular_ttf),
+                .name = "Roboto",
+            },
+        };
+
+        // Add the custom fonts to the nano_fonts struct
+        memcpy(nano_fonts.fonts, custom_fonts,
+               NANO_NUM_FONTS * sizeof(nano_font_t));
+
+        // nano_fonts.font_size = 16.0f; // Default font size
+        // nano_fonts.font_index = 0; // Default font
+    }
+
     // Start a new WGPU application
-    wgpu_start(&(wgpu_desc_t){
+    nano_start_app(&(nano_app_desc_t){
         .title = "Nano Basic Demo",
         .res_x = 1920,
         .res_y = 1080,

@@ -4,7 +4,7 @@
 #include "emscripten/emscripten.h"
 #include "emscripten/html5.h"
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-#include "cimgui.h"
+#include "cimgui/cimgui.h"
 #include <assert.h>
 #include <emscripten.h>
 #include <stdio.h>
