@@ -2,6 +2,10 @@
 
 ## Current Implementations
 
+- WGSL Shader Parsing
+    - @vertex and @fragment -> WGPU RenderPipeline
+    - @compute -> WGPU Compute Pipeline
+
 - WGPU Compute Pipelines
     - Input Buffers
     - Output Buffers
@@ -11,6 +15,8 @@
     - Output Buffers
     - Vertex Buffers
     - Uniform Buffers
+    - Drawing
+    - MSAA (4 samples)
 
 - WGPU CImGui
 
