@@ -44,7 +44,13 @@ struct UniformBuffer {
     float time;          // 4 bytes
     float padding;       // 4 bytes
     float resolution[2]; // 8 bytes
-} uniform_buffer;        // 16 bytes
+    struct {
+        float freq;     // 4 bytes
+        float amp;      // 4 bytes
+        float speed;    // 4 bytes
+        float thickness; // 4 bytes
+    } wave;
+} uniform_buffer; // 16 bytes
 
 // Initialization callback passed to nano_start_app()
 static void init(void) {
@@ -80,10 +86,15 @@ static void init(void) {
         LOG("Failed to get wave shader\n");
         return;
     }
-
+    
+    // Initialize the uniform buffer
     uniform_buffer.time = 0.0f;
     uniform_buffer.resolution[0] = nano_app.wgpu->width;
     uniform_buffer.resolution[1] = nano_app.wgpu->height;
+    uniform_buffer.wave.freq = 5.0f;
+    uniform_buffer.wave.amp = 0.5f;
+    uniform_buffer.wave.speed = 0.5f;
+    uniform_buffer.wave.thickness = 0.005f;
 
     // Set the vertex count for the shader (if we don't set this, it defaults to
     // 3)
@@ -125,16 +136,30 @@ static void frame(void) {
 
     // Set the window position
     igSetNextWindowPos(
-        (ImVec2){nano_app.wgpu->width - (nano_app.wgpu->width) * 0.5, 20},
+        (ImVec2){nano_app.wgpu->width - (nano_app.wgpu->width) * 0.5, 25},
         ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+    igSetNextWindowSize((ImVec2){0, 225}, ImGuiCond_FirstUseEver);
     igBegin("Nano Wave Demo", NULL, 0);
     igText("This demo shows how to use the fragment shader and a uniform "
            "buffer to create a wave effect using WebGPU, WGSL, and Nano.");
+    igSeparatorText("Wave Settings");
+    igSetNextItemWidth(150);
+    igSliderFloat("Wave Frequency", &uniform_buffer.wave.freq, 0.0f, 10.0f,
+                  "%.2f", 1.0f);
+    igSetNextItemWidth(150);
+    igSliderFloat("Wave Amplitude", &uniform_buffer.wave.amp, 0.0f, 5.0f,
+                    "%.2f", 1.0f);
+    igSetNextItemWidth(150);
+    igSliderFloat("Wave Speed", &uniform_buffer.wave.speed, 0.0f, 1.0f,
+                    "%.2f", 1.0f);
+    igSetNextItemWidth(150);
+    igSliderFloat("Wave Thickness", &uniform_buffer.wave.thickness, 0.0f, 0.1f,
+                    "%.3f", 1.0f);
     igEnd();
 
     // Change Nano app state at end of frame
     nano_end_frame();
-    
+
     // Update the uniform buffer
     uniform_buffer.resolution[0] = nano_app.wgpu->width;
     uniform_buffer.resolution[1] = nano_app.wgpu->height;

@@ -1,6 +1,10 @@
 struct Uniforms {
     @align(8) time: f32,
     @align(8) resolution: vec2<f32>,
+    @align(4) frequency: f32,
+    @align(4) amplitude: f32,
+    @align(4) speed: f32,
+    @align(4) thickness: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -30,22 +34,19 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-    let aspect = uniforms.resolution.x / uniforms.resolution.y;
-    let uv_aspect = vec2<f32>(uv.x * aspect, uv.y);
 
     // Parameters for the sine wave
-    let frequency = 4.0;
-    let amplitude = 0.4;
-    let speed = 0.5;
+    let time = uniforms.time;
+    let frequency = uniforms.frequency;
+    let amplitude = uniforms.amplitude;
+    let speed = uniforms.speed;
+    let thickness = uniforms.thickness;
 
     // Calculate the y-position of the sine wave
-    let wave_y = sin((uv_aspect.x + uniforms.time * speed) * frequency) * amplitude + 0.5;
+    let wave_y = sin((uv.x + time * speed) * frequency) * amplitude + 0.5;
 
     // Calculate distance from current pixel to the sine wave
-    let dist = abs(uv_aspect.y - wave_y);
-
-    // Line thickness
-    let thickness = 0.005;
+    let dist = abs(uv.y - wave_y);
 
     // Smoothstep for anti-aliasing
     let line = 1.0 - smoothstep(0.0, thickness, dist);

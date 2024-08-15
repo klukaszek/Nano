@@ -2683,6 +2683,8 @@ int nano_shader_deactivate(nano_shader_t *shader) {
     // Remove the shader from the active shaders list
     nano_index_array_remove(&nano_app.shader_pool.active_shaders, shader->id);
 
+    _nano_update_shader_labels();
+
     return NANO_OK;
 }
 
