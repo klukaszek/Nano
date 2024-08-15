@@ -41,8 +41,8 @@ make
 ```
 ## Samples
 
-Samples can be found at https://kylelukaszek.xyz/Nano/DEMO_NAME/DEMO_NAME.html
-The list of demo names can be found in the Samples/ directory.
+- Samples can be found at https://kylelukaszek.xyz/Nano/[DEMO_NAME]/[DEMO_NAME].html
+- The list of demo names can be found in the Samples/ directory.
 
 ## Changelog
 
