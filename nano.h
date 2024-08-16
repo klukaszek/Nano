@@ -263,35 +263,6 @@ typedef struct {
     WGPUTextureUsageFlags usage;
 } wgsl_storage_texture_info_t;
 
-// WGSL Types
-typedef enum {
-    TYPE_VOID,
-    TYPE_BOOL,
-    TYPE_I32,
-    TYPE_U32,
-    TYPE_F32,
-    TYPE_F16,
-    TYPE_VEC2,
-    TYPE_VEC3,
-    TYPE_VEC4,
-    TYPE_MAT2X2,
-    TYPE_MAT2X3,
-    TYPE_MAT2X4,
-    TYPE_MAT3X2,
-    TYPE_MAT3X3,
-    TYPE_MAT3X4,
-    TYPE_MAT4X2,
-    TYPE_MAT4X3,
-    TYPE_MAT4X4,
-    TYPE_ARRAY,
-    TYPE_STRUCT,
-    TYPE_TEXTURE,
-    TYPE_SAMPLER,
-    TYPE_POINTER,
-    TYPE_ATOMIC,
-    TYPE_CUSTOM
-} wgsl_type;
-
 // Keep track order of entry points in the shader
 typedef struct {
     int8_t vertex;
