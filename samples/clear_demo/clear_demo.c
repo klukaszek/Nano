@@ -62,9 +62,6 @@ static void init(void) {
     // ------------------------------------------------------
     /* Example: Initialization of WGPU Shaders using Nano */
 
-    // Initialize the buffer pool for the compute backend
-    nano_init_shader_pool(&nano_app.shader_pool);
-
     // Set the buffer size for the compute shader
     buffer_size = NUM_DATA * sizeof(Data);
 

@@ -81,9 +81,6 @@ static void init(void) {
     LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
     LOG("DEMO: Max Vertex Attributes: %u\n", limits.limits.maxVertexAttributes);
 
-    // Initialize the buffer pool for the compute backend
-    nano_init_shader_pool(&nano_app.shader_pool);
-
     // Fragment and Vertex shader creation
     char triangle_shader_name[] = "rgb-triangle.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
