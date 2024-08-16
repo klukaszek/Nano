@@ -2,15 +2,23 @@
 
 ## Current Implementations
 
-- WGSL Compute Pipelines
+- WGSL Shader Parsing
+    - @vertex and @fragment -> WGPU RenderPipeline
+    - @compute -> WGPU Compute Pipeline
+
+- WGPU Compute Pipelines
     - Input Buffers
     - Output Buffers
 
-- WGSL Render Pipelines
+- WGPU Render Pipelines
     - Input Buffers
     - Output Buffers
     - Vertex Buffers
     - Uniform Buffers
+    - Drawing
+    - MSAA (4 samples)
+
+- WGPU CImGui
 
 ## Installation
 
@@ -31,9 +39,10 @@ emcmake cmake .
 # Compile
 make
 ```
+## Samples
 
-Samples can be found at https://kylelukaszek.xyz/Nano/DEMO_NAME/DEMO_NAME.html
-The list of demo names can be found in the Samples/ directory.
+- Samples can be found at https://kylelukaszek.xyz/Nano/[DEMO_NAME]/[DEMO_NAME].html
+- The list of demo names can be found in the Samples/ directory.
 
 ## Changelog
 
