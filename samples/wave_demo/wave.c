@@ -22,11 +22,6 @@
 // Include the cimgui header file so we can use imgui with nano
 #include "cimgui/cimgui.h"
 
-// Custom data example for loading into the compute shader
-typedef struct {
-    float value;
-} Data;
-
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
 // Nano Application
@@ -101,10 +96,23 @@ static void init(void) {
     // Set the vertex count for the shader (if we don't set this, it defaults to
     // 3)
     nano_shader_set_vertex_count(wave_shader, 3); // not needed in this case
+    
+    nano_binding_info_t *binding = nano_shader_get_binding(wave_shader, 0, 0);
+    if (!binding) {
+        LOG("Failed to get binding\n");
+        return;
+    }
 
-    // Assign the data to the uniform buffer
-    int status = nano_shader_assign_uniform_data(
-        wave_shader, 0, 0, &uniform_buffer, sizeof(uniform_buffer));
+    // Create a uniform buffer
+    uint32_t buffer_id = nano_create_buffer(binding, sizeof(uniform_buffer), 1, 0, &uniform_buffer);
+    nano_buffer_t *uniform_buffer = nano_get_buffer(&nano_app.buffer_pool, buffer_id);
+    if (!uniform_buffer) {
+        LOG("Failed to get uniform buffer\n");
+        return;
+    }
+    
+    // Assign the uniform buffer to the shader
+    int status = nano_shader_assign_uniform_buffer(wave_shader, uniform_buffer, 0, 0);
     if (status == NANO_FAIL) {
         LOG("Failed to assign uniform data\n");
         return;
