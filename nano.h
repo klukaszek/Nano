@@ -1107,27 +1107,27 @@ uint32_t nano_create_buffer(nano_binding_info_t *binding, size_t size,
 // Used by nano_shader_build_bindgroup() to create the buffers and bindgroups.
 // This function should be called before activating a shader.
 // Overwrites existing buffer data if it already exists.
-int nano_shader_assign_buffer(nano_shader_t *shader, nano_buffer_t *buffer,
+int nano_shader_bind_buffer(nano_shader_t *shader, nano_buffer_t *buffer,
                               uint8_t group, uint8_t binding) {
     if (shader == NULL) {
-        LOG_ERR("NANO: nano_shader_assign_buffer() -> Shader is NULL\n");
+        LOG_ERR("NANO: nano_shader_bind_buffer() -> Shader is NULL\n");
         return NANO_FAIL;
     }
 
     if (buffer == NULL) {
-        LOG_ERR("NANO: nano_shader_assign_buffer() -> Buffer is NULL\n");
+        LOG_ERR("NANO: nano_shader_bind_buffer() -> Buffer is NULL\n");
         return NANO_FAIL;
     }
 
     if (group >= NANO_MAX_GROUPS || binding >= NANO_GROUP_MAX_BINDINGS) {
-        LOG_ERR("NANO: nano_shader_assign_buffer() -> Group or binding "
+        LOG_ERR("NANO: nano_shader_bind_buffer() -> Group or binding "
                 "index out of bounds\n");
         return NANO_FAIL;
     }
 
     wgpu_shader_info_t *info = &shader->info;
     if (info == NULL) {
-        LOG_ERR("NANO: nano_shader_assign_buffer() -> Shader info is "
+        LOG_ERR("NANO: nano_shader_bind_buffer() -> Shader info is "
                 "NULL\n");
         return NANO_FAIL;
     }
@@ -1150,7 +1150,7 @@ int nano_shader_assign_buffer(nano_shader_t *shader, nano_buffer_t *buffer,
 // Assign a pointer to the data we want to continuously copy to the GPU
 // The group and binding is important since we need to know where to copy
 // the data to in the shader
-int nano_shader_assign_uniform_buffer(nano_shader_t *shader,
+int nano_shader_bind_uniforms(nano_shader_t *shader,
                                       nano_buffer_t *buffer, uint8_t group,
                                       uint8_t binding) {
     if (shader == NULL) {
@@ -1180,7 +1180,7 @@ int nano_shader_assign_uniform_buffer(nano_shader_t *shader,
     }
 
     // Assign the buffer data to the shader
-    int status = nano_shader_assign_buffer(shader, buffer, group, binding);
+    int status = nano_shader_bind_buffer(shader, buffer, group, binding);
     if (status == NANO_FAIL) {
         LOG_ERR("NANO: nano_shader_assign_uniform_data() -> Failed to assign "
                 "uniform data\n");

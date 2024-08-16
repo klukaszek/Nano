@@ -45,7 +45,7 @@ struct UniformBuffer {
         float speed;    // 4 bytes
         float thickness; // 4 bytes
     } wave;
-} uniform_buffer; // 16 bytes
+} uniform_data; // 16 bytes
 
 // Initialization callback passed to nano_start_app()
 static void init(void) {
@@ -83,15 +83,15 @@ static void init(void) {
     }
     
     // Initialize the uniform buffer
-    uniform_buffer.time = 0.0f;
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
+    uniform_data.time = 0.0f;
+    uniform_data.resolution[0] = nano_app.wgpu->width;
+    uniform_data.resolution[1] = nano_app.wgpu->height;
 
     // Wave parameters
-    uniform_buffer.wave.freq = 5.0f;
-    uniform_buffer.wave.amp = 0.5f;
-    uniform_buffer.wave.speed = 0.2f;
-    uniform_buffer.wave.thickness = 0.005f;
+    uniform_data.wave.freq = 5.0f;
+    uniform_data.wave.amp = 0.5f;
+    uniform_data.wave.speed = 0.2f;
+    uniform_data.wave.thickness = 0.005f;
 
     // Set the vertex count for the shader (if we don't set this, it defaults to
     // 3)
@@ -104,7 +104,7 @@ static void init(void) {
     }
 
     // Create a uniform buffer
-    uint32_t buffer_id = nano_create_buffer(binding, sizeof(uniform_buffer), 1, 0, &uniform_buffer);
+    uint32_t buffer_id = nano_create_buffer(binding, sizeof(uniform_data), 1, 0, &uniform_data);
     nano_buffer_t *uniform_buffer = nano_get_buffer(&nano_app.buffer_pool, buffer_id);
     if (!uniform_buffer) {
         LOG("Failed to get uniform buffer\n");
@@ -112,7 +112,7 @@ static void init(void) {
     }
     
     // Assign the uniform buffer to the shader
-    int status = nano_shader_assign_uniform_buffer(wave_shader, uniform_buffer, 0, 0);
+    int status = nano_shader_bind_uniforms(wave_shader, uniform_buffer, 0, 0);
     if (status == NANO_FAIL) {
         LOG("Failed to assign uniform data\n");
         return;
@@ -154,16 +154,16 @@ static void frame(void) {
            "buffer to create a wave effect using WebGPU, WGSL, and Nano.");
     igSeparatorText("Wave Settings");
     igSetNextItemWidth(150);
-    igSliderFloat("Wave Frequency", &uniform_buffer.wave.freq, 0.0f, 10.0f,
+    igSliderFloat("Wave Frequency", &uniform_data.wave.freq, 0.0f, 10.0f,
                   "%.2f", 1.0f);
     igSetNextItemWidth(150);
-    igSliderFloat("Wave Amplitude", &uniform_buffer.wave.amp, 0.0f, 5.0f,
+    igSliderFloat("Wave Amplitude", &uniform_data.wave.amp, 0.0f, 5.0f,
                     "%.2f", 1.0f);
     igSetNextItemWidth(150);
-    igSliderFloat("Wave Speed", &uniform_buffer.wave.speed, 0.0f, 1.0f,
+    igSliderFloat("Wave Speed", &uniform_data.wave.speed, 0.0f, 1.0f,
                     "%.2f", 1.0f);
     igSetNextItemWidth(150);
-    igSliderFloat("Wave Thickness", &uniform_buffer.wave.thickness, 0.0f, 0.1f,
+    igSliderFloat("Wave Thickness", &uniform_data.wave.thickness, 0.0f, 0.1f,
                     "%.3f", 1.0f);
     igEnd();
 
@@ -171,9 +171,9 @@ static void frame(void) {
     nano_end_frame();
 
     // Update the uniform buffer
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
-    uniform_buffer.time += 0.01;
+    uniform_data.resolution[0] = nano_app.wgpu->width;
+    uniform_data.resolution[1] = nano_app.wgpu->height;
+    uniform_data.time += 0.01;
 }
 
 // Shutdown callback passed to nano_start_app()
