@@ -72,7 +72,7 @@ static void init(void) {
         return;
     }
 
-    dot_shader = nano_get_shader(&nano_app.shader_pool, dot_shader_id);
+    dot_shader = nano_get_shader(dot_shader_id);
     if (!dot_shader) {
         LOG("Failed to get dot shader\n");
         return;
@@ -93,7 +93,7 @@ static void init(void) {
         uniform_binding, sizeof(uniform_data), 1, 0, &uniform_data);
 
     nano_buffer_t *uniform_buffer =
-        nano_get_buffer(&nano_app.buffer_pool, buffer_id);
+        nano_get_buffer(buffer_id);
 
     int status = nano_shader_bind_uniforms(dot_shader, uniform_buffer, 0, 0);
     if (status == NANO_FAIL) {

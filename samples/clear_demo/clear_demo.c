@@ -18,7 +18,7 @@ typedef struct {
     float value;
 } Data;
 
-#define NUM_DATA 2048
+#define NUM_DATA 65536
 #define MAX_ITERATIONS 100000
 char SHADER_PATH[] = "/wgpu-shaders/%s";
 
@@ -28,15 +28,15 @@ char SHADER_PATH[] = "/wgpu-shaders/%s";
 // Size of input and output buffers in this example
 size_t buffer_size;
 
-// GPU buffers for the input and output data
-WGPUBuffer output_buffer, input_buffer;
-
 // Nano shader structs for the compute and triangle shaders examples
 nano_shader_t *compute_shader;
 nano_shader_t *triangle_shader;
 
 // GPU data struct that contains the data and status of the copy operation
 nano_gpu_data_t gpu_compute;
+
+// Initialize the input data
+Data input_data[NUM_DATA];
 
 // Data that will be copied to from the nano_gpu_data_t struct
 Data output_data[NUM_DATA];
@@ -54,8 +54,7 @@ static void init(void) {
     wgpuDeviceGetLimits(nano_app.wgpu->device, &supported_limits);
     WGPULimits limits = supported_limits.limits;
 
-    // Initialize the input data
-    Data input_data[NUM_DATA];
+    // Set the initial values of the input data
     for (int i = 0; i < NUM_DATA; ++i) {
         input_data[i].value = i * 0.1f;
     }
@@ -67,7 +66,7 @@ static void init(void) {
     nano_init_shader_pool(&nano_app.shader_pool);
 
     // Set the buffer size for the compute shader
-    buffer_size = NUM_DATA * sizeof(float);
+    buffer_size = NUM_DATA * sizeof(Data);
 
     // COMPUTE SHADER CREATION
     char compute_shader_name[] = "compute-wgpu.wgsl";
@@ -97,22 +96,44 @@ static void init(void) {
     }
 
     // Get the shader from the shader pool
-    compute_shader = nano_get_shader(&nano_app.shader_pool, compute_shader_id);
+    compute_shader = nano_get_shader(compute_shader_id);
+    triangle_shader = nano_get_shader(triangle_shader_id);
 
-    triangle_shader =
-        nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
+    // Get the bindings from the compute shader
+    nano_binding_info_t *input_binding =
+        nano_shader_get_binding(compute_shader, 0, 0);
+    nano_binding_info_t *output_binding =
+        nano_shader_get_binding(compute_shader, 0, 1);
 
-    // Assign buffer data to the shader
-    nano_shader_assign_buffer_data(compute_shader, 0, 0, buffer_size, NUM_DATA,
-                                   0, input_data);
+    // Create buffers for the input and output data
+    uint32_t input_id =
+        nano_create_buffer(input_binding, buffer_size, NUM_DATA, 0, input_data);
+    // We pass NULL since we want an empty buffer of buffer_size
+    uint32_t output_id =
+        nano_create_buffer(output_binding, buffer_size, NUM_DATA, 0, NULL);
 
-    // Assign buffer data to output buffer, pass NULL for data
-    nano_shader_assign_buffer_data(compute_shader, 0, 1, buffer_size, NUM_DATA,
-                                   0, NULL);
+    // Get the buffers from the buffer pool and write to the input one.
+    nano_buffer_t *input_buffer = nano_get_buffer(input_id);
+    nano_buffer_t *output_buffer = nano_get_buffer(output_id);
+    nano_write_buffer(input_buffer);
+
+    // Bind input buffer to the compute shader
+    int status = nano_shader_bind_buffer(compute_shader, input_buffer, 0, 0);
+    if (status == NANO_FAIL) {
+        LOG("DEMO: Failed to bind buffer to shader\n");
+        return;
+    }
+
+    // Bind output buffer to the compute shader
+    status = nano_shader_bind_buffer(compute_shader, output_buffer, 0, 1);
+    if (status == NANO_FAIL) {
+        LOG("DEMO: Failed to bind buffer to shader\n");
+        return;
+    }
 
     // Assign output buffer to the shader so that the num_workgroups
-    // can be calculated based on the number of elements in the buffer
-    nano_compute_shader_assign_output_buffer(compute_shader, 0, 1);
+    // can be calculated based on the number of elements expected
+    nano_shader_set_num_elems(compute_shader, NUM_DATA);
 
     // Build and activate the compute shader
     // Once a shader is built, it can be activated and deactivated
@@ -124,25 +145,11 @@ static void init(void) {
     nano_shader_activate(compute_shader, true);
     nano_shader_activate(triangle_shader, true);
 
-    nano_binding_info_t* input_binding = nano_shader_get_binding(compute_shader, 0, 0);
-
-    // Get the input buffer from the shader
-    input_buffer = input_binding->data.buffer;
-
-    nano_binding_info_t* output_binding = nano_shader_get_binding(compute_shader, 0, 1);
-
-    // Get the output buffer from the shader
-    output_buffer = output_binding->data.buffer;
-
-    // Once our shader is completely built and we have a compute pipeline, we
-    // can write the data to the input buffers to be used in the shader pass.
-    nano_write_buffer(input_binding, 0, input_data, NUM_DATA * sizeof(Data));
-
     // Define the gpu data struct that will be used to read the data back from
     // the GPU buffer
     gpu_compute = (nano_gpu_data_t){
         .size = sizeof(input_data),
-        .src = output_buffer,
+        .src = output_buffer->buffer,
     };
 }
 
@@ -184,6 +191,8 @@ static void frame(void) {
         // wgpuBufferGetMappedRange error when copying the data
         nano_shader_deactivate(compute_shader);
 
+        LOG("GPU TEST: Compute GPU Results\n\t");
+
         // Copy the output buffer to the gpu data struct
         int status = nano_copy_buffer_to_cpu(&gpu_compute, NULL);
         if (status == NANO_FAIL) {
@@ -200,15 +209,13 @@ static void frame(void) {
         // In this case, we are copying the data to the output_data array.
         memcpy(output_data, gpu_compute.data, buffer_size);
 
-        LOG("GPU TEST: Running shader on GPU\n");
-
         LOG("\tGPU TEST: %f seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
         LOG("\tGPU TEST: Iterations %d (double check the shader)\n",
             MAX_ITERATIONS);
         LOG("\tGPU TEST: Last Output data[%d] = %f\n", NUM_DATA - 1,
             output_data[NUM_DATA - 1].value);
 
-        LOG("GPU TEST: Finished running shader on GPU\n");
+        LOG("GPU TEST: Finished readback from GPU!\n");
 
         // Release the status lock on the GPU copy so that it will not
         // execute again. If you do not release the lock, the copy
@@ -258,7 +265,7 @@ int main(int argc, char *argv[]) {
 
         // nano_fonts.font_size = 16.0f; // Default font size
         // nano_fonts.font_index = 0; // Default font
-    }  
+    }
 
     // Start a new WGPU application
     nano_start_app(&(nano_app_desc_t){

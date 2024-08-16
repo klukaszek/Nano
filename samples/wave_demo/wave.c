@@ -76,7 +76,7 @@ static void init(void) {
         return;
     }
 
-    wave_shader = nano_get_shader(&nano_app.shader_pool, wave_shader_id);
+    wave_shader = nano_get_shader(wave_shader_id);
     if (!wave_shader) {
         LOG("Failed to get wave shader\n");
         return;
@@ -105,7 +105,7 @@ static void init(void) {
 
     // Create a uniform buffer
     uint32_t buffer_id = nano_create_buffer(binding, sizeof(uniform_data), 1, 0, &uniform_data);
-    nano_buffer_t *uniform_buffer = nano_get_buffer(&nano_app.buffer_pool, buffer_id);
+    nano_buffer_t *uniform_buffer = nano_get_buffer(buffer_id);
     if (!uniform_buffer) {
         LOG("Failed to get uniform buffer\n");
         return;
