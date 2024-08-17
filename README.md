@@ -18,6 +18,8 @@
     - Drawing
     - MSAA (4 samples)
 
+- WGPU CImGui
+
 - Nano Buffer Pool
     - Made up of WGPU Buffers
     - Storage Buffers
@@ -27,8 +29,6 @@
 - Nano Shader Pool
     - Made up of WGPU Pipelines
     - Support Compute and Render
-
-- WGPU CImGui
 
 ## Installation
 
