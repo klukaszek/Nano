@@ -60,5 +60,4 @@ samples/wave_demo/CMakeFiles/wave_demo.dir/wave.c.o: \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stdarg_va_list.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stdarg_va_arg.h \
   /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stdarg___va_copy.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stdarg_va_copy.h \
-  /home/runner/work/Nano/Nano/emsdk/upstream/emscripten/cache/sysroot/include/emscripten.h
+  /home/runner/work/Nano/Nano/emsdk/upstream/lib/clang/19/include/__stdarg_va_copy.h
