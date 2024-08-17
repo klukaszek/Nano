@@ -1,4 +1,4 @@
-# Nano 0.4
+# Nano 0.5
 
 ## Current Implementations
 
@@ -19,6 +19,16 @@
     - MSAA (4 samples)
 
 - WGPU CImGui
+
+- Nano Buffer Pool
+    - Made up of WGPU Buffers
+    - Storage Buffers
+    - Uniform Buffers
+    - Vertex Buffers
+
+- Nano Shader Pool
+    - Made up of WGPU Pipelines
+    - Support Compute and Render
 
 ## Installation
 
@@ -46,6 +56,21 @@ make
 
 ## Changelog
 
+### 0.5
+
+Reworked the entire buffer management system so that WGPU buffers can be shared between shaders since they used to be assigned directly to a shader. There is now a global buffer pool (similar in function to the shader pool) that is in charge of handling all buffers in Nano. 
+
+See:
+- nano_create_buffer()
+- nano_create_vertex_buffer()
+- nano_shader_bind_buffer()
+- nano_shader_bind_uniforms()
+- nano_shader_bind_vertex_buffer()
+
+All samples have been updated to work with the new buffer management system.
+
+Next I think I am going to try to implement Samplers and Textures into Nano since these are the only missing pieces before I can fully load a WGSL shader.
+
 ### 0.4
 
 Implemented the WGPU RenderPipeline for parsed shaders in Nano. This also comes with the addition of Vertex Buffers and Uniform Buffers. With this version you can find several new demos for loading Vertex and Fragment shaders into a Nano project.
@@ -54,7 +79,7 @@ I plan on releasing a much more in-depth post regarding how Nano is put together
 
 For the next few versions I want to focus on refactoring the existing codebase to eliminate any redundencies that may have persisted between version changes.
 
-My TODO is telling me to look into a better way at managing fonts in Nano, ensuring that basic audio is something that can be controlled using Nano, and to create a ShaderToy-like playground as the version 1.0 de-facto demo.
+My TODO is telling me to look into a better way of managing fonts in Nano, ensuring that basic audio is something that can be controlled using Nano, and to create a ShaderToy-like playground as the version 1.0 de-facto demo.
 
 ### 0.3 
 Implemented shader buffer binding, pipeline layout, bind group, and pipeline generation from WGSL shader files. At the moment, simple compute shaders seem to be working as intended so I am going to take a short break and then get to work on parsing textures from WGSL and generating the appropriate bindings. Once that is complete, I can think about fully generating render pipelines from the shader.

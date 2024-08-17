@@ -33,7 +33,7 @@ char SHADER_PATH[] = "/wgpu-shaders/%s";
 // ------------------------------------------------------
 
 // Nano shader structs for the compute and triangle shaders examples
-nano_shader_t *wave_shader;
+nano_shader_t *dot_shader;
 char shader_path[256];
 char shader_code[8192];
 
@@ -41,10 +41,10 @@ char shader_code[8192];
 // expected, you should use the @align(n) directive in the shader to align the
 // buffer in multiples of 16 bytes. See assets/shaders/dot.wgsl for an example.
 struct UniformBuffer {
-    float time; // 4 bytes
-    float padding; // 4 bytes
+    float time;          // 4 bytes
+    float padding;       // 4 bytes
     float resolution[2]; // 8 bytes
-} uniform_buffer; // 16 bytes
+} uniform_data;          // 16 bytes
 
 // Initialization callback passed to nano_start_app()
 static void init(void) {
@@ -61,38 +61,43 @@ static void init(void) {
     LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
     LOG("DEMO: Max Vertex Attributes: %u\n", limits.limits.maxVertexAttributes);
 
-    // Initialize the buffer pool for the compute backend
-    nano_init_shader_pool(&nano_app.shader_pool);
-
     // Fragment and Vertex shader creation
-    char wave_shader_name[] = "dot.wgsl";
-    snprintf(shader_path, sizeof(shader_path), SHADER_PATH, wave_shader_name);
+    char dot_shader_name[] = "dot.wgsl";
+    snprintf(shader_path, sizeof(shader_path), SHADER_PATH, dot_shader_name);
 
-    uint32_t wave_shader_id =
-        nano_create_shader_from_file(shader_path, wave_shader_name);
-    if (wave_shader_id == NANO_FAIL) {
-        LOG("Failed to create wave shader\n");
+    uint32_t dot_shader_id =
+        nano_create_shader_from_file(shader_path, dot_shader_name);
+    if (dot_shader_id == NANO_FAIL) {
+        LOG("Failed to create dot shader\n");
         return;
     }
 
-    wave_shader = nano_get_shader(&nano_app.shader_pool, wave_shader_id);
-    if (!wave_shader) {
-        LOG("Failed to get wave shader\n");
+    dot_shader = nano_get_shader(dot_shader_id);
+    if (!dot_shader) {
+        LOG("Failed to get dot shader\n");
         return;
     }
 
-    uniform_buffer.time = 0.0f;
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
+    uniform_data.time = 0.0f;
+    uniform_data.resolution[0] = nano_app.wgpu->width;
+    uniform_data.resolution[1] = nano_app.wgpu->height;
 
-    // Set the vertex count for the shader (if we don't set this, it defaults to
-    // 3) We use 4 for a quad here nano_shader_set_vertex_count(wave_shader, 3);
+    nano_binding_info_t *uniform_binding =
+        nano_shader_get_binding(dot_shader, 0, 0);
 
-    // Assign the data to the uniform buffer
-    int status = nano_shader_assign_uniform_data(
-        wave_shader, 0, 0, &uniform_buffer, sizeof(uniform_buffer));
+    // Returns 0 if fails. It won't fail in this case though.
+    // We pass the uniform_binding information, the size of the uniform_data,
+    // the number of elements in the buffer (for uniform structs it should
+    // always be 1), the offset, and the data.
+    uint32_t buffer_id = nano_create_buffer(
+        uniform_binding, sizeof(uniform_data), 1, 0, &uniform_data);
+
+    nano_buffer_t *uniform_buffer =
+        nano_get_buffer(buffer_id);
+
+    int status = nano_shader_bind_uniforms(dot_shader, uniform_buffer, 0, 0);
     if (status == NANO_FAIL) {
-        LOG("Failed to assign uniform data\n");
+        LOG("Failed to assign uniform buffer to dot shader\n");
         return;
     }
 
@@ -103,7 +108,7 @@ static void init(void) {
     // will rebuild the shader.
     // This will build the pipeline layouts, bind groups, and necessary
     // pipelines.
-    nano_shader_activate(wave_shader, true);
+    nano_shader_activate(dot_shader, true);
 }
 
 // Frame callback passed to nano_start_app()
@@ -115,26 +120,19 @@ static void frame(void) {
     WGPUCommandEncoder cmd_encoder = nano_start_frame();
 
     // Execute the shaders in the order that they were activated.
-    nano_shader_execute(wave_shader);
+    nano_execute_shaders();
     // OR execute a specific shader using: nano_execute_shader(triangle_shader);
 
     // Note: If you are using the nano_execute_shaders() function, you do not
     // want to call nano_execute_shader() as it will execute the shader twice
     // on the same command encoder.
 
-    // Set the window position
-    // igSetNextWindowPos(
-    //     (ImVec2){nano_app.wgpu->width - (nano_app.wgpu->width) * 0.5, 20},
-    //     ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-    // igBegin("Nano Wave Demo", NULL, 0);
-    // igEnd();
-
     // Change Nano app state at end of frame
     nano_end_frame();
 
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
-    uniform_buffer.time += 0.01f;
+    uniform_data.resolution[0] = nano_app.wgpu->width;
+    uniform_data.resolution[1] = nano_app.wgpu->height;
+    uniform_data.time += 0.01f;
 }
 
 // Shutdown callback passed to nano_start_app()

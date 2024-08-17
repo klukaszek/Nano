@@ -81,9 +81,6 @@ static void init(void) {
     LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
     LOG("DEMO: Max Vertex Attributes: %u\n", limits.limits.maxVertexAttributes);
 
-    // Initialize the buffer pool for the compute backend
-    nano_init_shader_pool(&nano_app.shader_pool);
-
     // Fragment and Vertex shader creation
     char triangle_shader_name[] = "rgb-triangle.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
@@ -99,16 +96,22 @@ static void init(void) {
     }
 
     // Get the shader from the shader pool
-    triangle_shader =
-        nano_get_shader(&nano_app.shader_pool, triangle_shader_id);
+    triangle_shader = nano_get_shader(triangle_shader_id);
 
-    // Assign the vertex buffer to the shader so that it can be compiled into
-    // the pipeline.
-    int status = nano_shader_create_vertex_buffer(
-        triangle_shader, (WGPUVertexAttribute *)&attributes, 2, sizeof(Vertex),
-        sizeof(vertex_data), &vertex_data);
-    if (status != NANO_OK) {
+    // Create the vertex buffer for the triangle
+    uint32_t vertex_buffer_id =
+        nano_create_vertex_buffer(sizeof(vertex_data), 0, &vertex_data, NULL);
+    if (vertex_buffer_id == NANO_FAIL) {
         LOG("DEMO: Failed to create vertex buffer\n");
+        return;
+    }
+
+    // Bind the vertex buffer to the shader
+    int status = nano_shader_bind_vertex_buffer(
+        triangle_shader, vertex_buffer_id, (WGPUVertexAttribute *)&attributes,
+        2, sizeof(Vertex));
+    if (status != NANO_OK) {
+        LOG("DEMO: Failed to bind vertex buffer\n");
         return;
     }
 

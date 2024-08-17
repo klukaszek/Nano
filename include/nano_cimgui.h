@@ -1,16 +1,16 @@
 #ifndef NANO_CIMGUI_IMPL
 
 #define NANO_CIMGUI_IMPL
-#include "emscripten/emscripten.h"
-#include "emscripten/html5.h"
-#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-#include "cimgui/cimgui.h"
+#include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
 #include <assert.h>
-#include <emscripten.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <webgpu/webgpu.h>
+
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui/cimgui.h"
 
 // Replace ImGui macros with standard C equivalents
 #define IM_ASSERT(expr) assert(expr)
