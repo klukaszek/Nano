@@ -300,14 +300,13 @@ typedef struct {
     uint32_t count;
     size_t offset;
     void *data;
-    const char *label;
+    char label[NANO_MAX_IDENT_LENGTH];
 } nano_buffer_t;
 
 typedef struct {
     WGPUVertexBufferLayout vertex_buffer_layout;
-    WGPUBuffer buffer;
-    size_t size;
-    void *data;
+    uint32_t buffer_id;
+    uint8_t attribute_count;
 } nano_vertex_buffer_t;
 
 // Represents data that is copied from the GPU to the CPU
@@ -1082,7 +1081,8 @@ void nano_write_buffer(nano_buffer_t *buffer) {
                          buffer->size);
 
     LOG("NANO: Buffer %u: \'%s\': Successfully wrote %zu bytes.\n", buffer->id,
-        buffer->label ? buffer->label : "Unnamed", buffer->size);
+        (char *)buffer->label ? (char *)buffer->label : "Unnamed",
+        buffer->size);
 }
 
 // Create a Nano WGPU buffer object using a shader binding description
@@ -1116,6 +1116,8 @@ uint32_t nano_create_buffer(nano_binding_info_t *binding, size_t size,
         .mappedAtCreation = false,
     };
 
+    memcpy((char *)desc.label, binding->name, NANO_MAX_IDENT_LENGTH);
+
     uint32_t buffer_id = fnv1a_32(binding->name);
 
     // Get a buffer slot from the buffer pool
@@ -1133,8 +1135,9 @@ uint32_t nano_create_buffer(nano_binding_info_t *binding, size_t size,
         .count = count,
         .offset = offset,
         .data = data,
-        .label = binding->name,
     };
+
+    memcpy(buffer.label, binding->name, NANO_MAX_IDENT_LENGTH);
 
     if (buffer.buffer == NULL) {
         LOG_ERR("NANO: nano_create_buffer() -> Could not create buffer\n");
@@ -1248,112 +1251,225 @@ int nano_shader_bind_uniforms(nano_shader_t *shader, nano_buffer_t *buffer,
     return NANO_OK;
 }
 
-// Add a vertex buffer to the shader. Requires the WGPUVertexAttribute array
-// of all attributes and the number of attributes in the array. The size of
-// the buffer and the data to be copied to the buffer should also be
-// provided.
-int nano_shader_create_vertex_buffer(nano_shader_t *shader,
-                                     WGPUVertexAttribute *attribs,
-                                     uint8_t count, size_t attribStride,
-                                     size_t size, void *data) {
-    if (shader == NULL) {
-        LOG_ERR("NANO: nano_shader_assign_vertex_buffer() -> Shader is NULL\n");
-        return NANO_FAIL;
+// Creates a buffer object for the vertex data. This buffer must be bound with
+// the WGPUVertexBufferLayout struct before it can be used in the vertex shader.
+// See nano_shader_bind_vertex_buffer() for more information.
+uint32_t nano_create_vertex_buffer(size_t size, size_t offset,
+                                   void *data, char *label) {
+    if (size == 0) {
+        LOG_ERR(
+            "NANO: nano_create_vertex_buffer() -> Vertex buffer size is 0\n");
+        return 0;
     }
 
-    if (shader->in_use) {
-        LOG_ERR("NANO: nano_shader_assign_vertex_buffer() -> Shader is "
-                "currently "
-                "use. Make sure to assign buffer data before activating a "
-                "shader.\n");
-        return NANO_FAIL;
+    if (data == NULL) {
+        LOG_ERR("NANO: nano_create_vertex_buffer() -> Vertex buffer data is "
+                "NULL\n");
+        return 0;
     }
 
-    if (count == 0) {
-        LOG_ERR("NANO: nano_shader_assign_vertex_buffer() -> Count is 0\n");
-        return NANO_FAIL;
+    char buffer_label[NANO_MAX_IDENT_LENGTH];
+    static int vb_id = 0;
+    if (label == NULL) {
+        sprintf(buffer_label, "Unlabeled Vertex Buffer %d", vb_id++);
+    } else {
+        if (strlen(label) > 64) {
+            LOG_ERR("NANO: nano_create_vertex_buffer() -> Label is too long\n");
+            return 0;
+        }
+        strncpy(buffer_label, label, strlen(label));
     }
 
-    if (shader->vertex_buffer_count >= NANO_MAX_VERTEX_BUFFERS) {
-        LOG_ERR("NANO: nano_shader_assign_vertex_buffer() -> Maximum number of "
-                "vertex buffers reached\n");
-        return NANO_FAIL;
-    }
-
-    // Get the vertex buffer layout at the current count
-    // Create a buffer descriptor for the vertex buffer
-    WGPUBufferDescriptor buffer_desc = {
-        .label = "Nano Vertex Buffer",
+    WGPUBufferDescriptor desc = {
         .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
         .size = size,
         .mappedAtCreation = false,
     };
 
-    // Create the WGPU buffer for the vertex data
-    WGPUBuffer buffer =
-        wgpuDeviceCreateBuffer(nano_app.wgpu->device, &buffer_desc);
-    if (buffer == NULL) {
-        LOG_ERR("NANO: nano_shader_assign_vertex_buffer() -> Could not create "
-                "GPU Buffer\n");
-        return NANO_FAIL;
-    }
+    // Copy the buffer label to the buffer descriptor
+    memcpy((char *)desc.label, buffer_label, strlen(buffer_label));
 
-    // Create the vertex buffer struct and assign the buffer data
-    nano_vertex_buffer_t vertex_buffer = {
-        .vertex_buffer_layout =
-            (WGPUVertexBufferLayout){
-                .arrayStride = attribStride,
-                .attributeCount = count,
-                .attributes = attribs,
-            },
-        .buffer = buffer,
+    // Create the buffer object
+    nano_buffer_t buffer = {
+        .id = fnv1a_32(buffer_label),
+        .buffer = wgpuDeviceCreateBuffer(nano_app.wgpu->device, &desc),
         .size = size,
+        .count = 1,
+        .offset = offset,
         .data = data,
     };
 
-    LOG("NANO: Vertex Buffer Layout -> Array Stride: %zu, Attribute Count: "
-        "%d\n",
-        attribStride, count);
+    if (buffer.buffer == NULL) {
+        LOG_ERR(
+            "NANO: nano_create_vertex_buffer() -> Could not create buffer\n");
+        return 0;
+    }
 
-    LOG("NANO: Vertex Buffer Data Size: %zu\n", size);
+    // Copy the buffer label to the buffer struct
+    memcpy(buffer.label, buffer_label, strlen(buffer_label));
 
-    LOG("NANO: nano_shader_assign_vertex_buffer() -> Vertex buffer %d "
-        "assigned\n",
-        shader->vertex_buffer_count);
+    // We need to add the vertex buffer to the buffer pool
+    int slot = nano_find_empty_buffer_slot(&nano_app.buffer_pool, buffer.id);
+    if (slot < 0) {
+        LOG_ERR("NANO: nano_create_vertex_buffer() -> Buffer pool is full\n");
+        return 0;
+    }
 
-    // Copy the vertex buffer to the shader
-    memcpy(&shader->vertex_buffers[shader->vertex_buffer_count], &vertex_buffer,
-           sizeof(nano_vertex_buffer_t));
+    // Memcopy this nano_buffer_t to the buffer pool
+    memcpy(&nano_app.buffer_pool.buffers[slot].buffer_entry, &buffer,
+           sizeof(nano_buffer_t));
 
-    // Since a shader can have multiple vertex buffers, we need to keep
-    // track of the total number of vertex attributes in the shader.
-    shader->vertex_attribute_count += count;
+    // Add the slot index to the active buffers array
+    nano_buffer_array_push(&nano_app.buffer_pool.active_buffers, slot);
+    nano_app.buffer_pool.buffer_count++;
+    nano_app.buffer_pool.buffers[slot].occupied = true;
 
-    // Increment the vertex buffer count
-    shader->vertex_buffer_count++;
+    LOG("NANO: Buffer %u: Successfully created %s buffer.\n", buffer.id,
+        buffer.label);
 
-    return NANO_OK;
+    return buffer.id;
 }
 
-// Remove a vertex buffer from the shader
-// and shift the rest of the vertex buffers down.
-int nano_shader_remove_vertex_buffer(nano_shader_t *shader, uint8_t index) {
+// Add a vertex buffer to the shader. Requires the WGPUVertexAttribute array
+// of all attributes and the number of attributes in the array. The size of
+// the buffer and the data to be copied to the buffer should also be
+// provided.
+int nano_shader_bind_vertex_buffer(nano_shader_t *shader, uint32_t buffer_id,
+                                   WGPUVertexAttribute *attributes,
+                                   uint8_t attribute_count,
+                                   size_t attribute_stride) {
     if (shader == NULL) {
-        LOG_ERR("NANO: nano_shader_remove_vertex_buffer() -> Shader is NULL\n");
+        LOG_ERR("NANO: Shader %u: nano_shader_bind_vertex_buffer() -> Shader "
+                "is NULL\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    if (attributes == NULL) {
+        LOG_ERR("NANO: nano_shader_bind_vertex_buffer() -> Vertex attributes "
+                "are NULL\n");
+        return NANO_FAIL;
+    }
+
+    if (shader->vertex_buffer_count >= NANO_MAX_VERTEX_BUFFERS) {
+        LOG_ERR("NANO: Shader %u: nano_shader_bind_vertex_buffer() -> Max "
+                "vertex buffers "
+                "reached\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    if (shader->vertex_attribute_count + attribute_count >=
+        NANO_MAX_VERTEX_ATTRIBUTES) {
+        LOG_ERR(
+            "NANO: Shader %u: nano_shader_bind_vertex_buffer() -> Max vertex "
+            "attributes reached\n",
+            shader->id);
         return NANO_FAIL;
     }
 
     if (shader->in_use) {
-        LOG_ERR("NANO: nano_shader_remove_vertex_buffer() -> Shader is "
+        LOG_ERR("NANO: nano_shader_bind_vertex_buffer() -> Shader is "
                 "currently "
                 "use. Make sure to assign buffer data before activating a "
                 "shader.\n");
         return NANO_FAIL;
     }
 
-    if (index >= shader->vertex_buffer_count) {
-        LOG_ERR("NANO: nano_shader_remove_vertex_buffer() -> Index out of "
-                "bounds\n");
+    if (buffer_id == 0) {
+        LOG_ERR("NANO: nano_shader_bind_vertex_buffer() -> Buffer ID is 0\n");
+        return NANO_FAIL;
+    }
+
+    if (attribute_count == 0) {
+        LOG_ERR(
+            "NANO: nano_shader_bind_vertex_buffer() -> No vertex attributes\n");
+        return NANO_FAIL;
+    }
+
+    // Check if the assigned buffer actually exists in the buffer pool
+    nano_buffer_t *buffer = nano_get_buffer(buffer_id);
+    if (buffer == NULL) {
+        LOG_ERR("NANO: nano_shader_bind_vertex_buffer() -> Buffer not found in "
+                "the buffer pool\n");
+        return NANO_FAIL;
+    }
+
+    // We create an intermediate struct to hold the vertex buffer information so
+    // that when we activate the shader, we can easily copy the vertex buffer
+    // data to the pipeline.
+    nano_vertex_buffer_t vertex_buffer = {
+        .vertex_buffer_layout =
+            {
+                .arrayStride = attribute_stride,
+                .stepMode = WGPUVertexStepMode_Vertex,
+                .attributeCount = attribute_count,
+                .attributes = attributes,
+            },
+        .buffer_id = buffer_id,
+    };
+
+    // Copy the vertex buffer data to the shader
+    memcpy(&shader->vertex_buffers[shader->vertex_buffer_count], &vertex_buffer,
+           sizeof(nano_vertex_buffer_t));
+
+    // Increment the vertex attribute count and the vertex buffer count
+    shader->vertex_buffer_count++;
+    shader->vertex_attribute_count += attribute_count;
+
+    return NANO_OK;
+}
+
+// Remove a vertex buffer from the shader and shift the rest of the vertex
+// buffers down. This does not free the buffered data from the GPU, it just
+// removes the vertex buffer from the shader. 
+// You should call nano_release_buffer() to free the buffer data.
+int nano_shader_remove_vertex_buffer(nano_shader_t *shader,
+                                     uint32_t buffer_id) {
+    if (shader == NULL) {
+        LOG_ERR("NANO: Shader %u: nano_shader_remove_vertex_buffer() -> Shader "
+                "is NULL\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+    if (shader->in_use) {
+        LOG_ERR(
+            "NANO: Shader %u: nano_shader_remove_vertex_buffer() -> Shader is "
+            "currently in"
+            "use. Make sure to assign buffer data before activating a "
+            "shader.\n",
+            shader->id);
+        return NANO_FAIL;
+    }
+    if (buffer_id == 0) {
+        LOG_ERR("NANO: Shader %u: nano_shader_remove_vertex_buffer() -> Buffer "
+                "ID is 0\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+    if (shader->vertex_buffer_count == 0) {
+        LOG_ERR("NANO: Shader %u: nano_shader_remove_vertex_buffer() -> No "
+                "vertex buffers "
+                "to remove\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    int index = -1;
+
+    // find the vertex buffer index in the shader
+    for (int i = 0; i < shader->vertex_buffer_count; i++) {
+        if (shader->vertex_buffers[i].buffer_id == buffer_id) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        LOG_ERR("NANO: Shader %u: nano_shader_remove_vertex_buffer() -> Vertex "
+                "buffer not "
+                "found in the shader\n",
+                shader->id);
         return NANO_FAIL;
     }
 
@@ -1645,8 +1761,13 @@ void nano_release_shader(uint32_t shader_id) {
     // Release the vertex buffers if they exist
     for (int i = 0; i < shader->vertex_buffer_count; i++) {
         nano_vertex_buffer_t *vertex_buffer = &shader->vertex_buffers[i];
-        if (vertex_buffer->buffer)
-            wgpuBufferRelease(vertex_buffer->buffer);
+        int status = nano_release_buffer(vertex_buffer->buffer_id);
+        if (status != NANO_OK) {
+            LOG_ERR("NANO: Shader %u: nano_release_shader() -> Failed to "
+                    "release vertex "
+                    "buffer %d\n",
+                    shader->id, vertex_buffer->buffer_id);
+        }
     }
 
     // Create a new empty shader entry at the shader slot
@@ -2178,12 +2299,18 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
         // Write the vertex buffer data to the GPU
         for (int i = 0; i < shader->vertex_buffer_count; i++) {
             nano_vertex_buffer_t *vertex_buffer = &shader->vertex_buffers[i];
-            size_t size = vertex_buffer->size;
-            void *data = vertex_buffer->data;
-            wgpuQueueWriteBuffer(queue, vertex_buffer->buffer, 0, data, size);
+            nano_buffer_t *buffer = nano_get_buffer(vertex_buffer->buffer_id);
+            if (buffer == NULL) {
+                LOG_ERR("NANO: Shader %u: Could not find vertex buffer %u. Did "
+                        "you create it?\n",
+                        info->id, vertex_buffer->buffer_id);
+                return NANO_FAIL;
+            }
+            // Write the buffer data to the GPU
+            nano_write_buffer(buffer);
             LOG("NANO: Shader %u: Wrote vertex buffer data to GPU buffer "
                 "%p\n",
-                info->id, vertex_buffer->buffer);
+                info->id, buffer->buffer);
         }
         LOG("NANO: Shader %u: Created Render Pipeline\n", info->id);
 
@@ -2898,9 +3025,17 @@ void nano_shader_execute(nano_shader_t *shader) {
 
             // Assign the vertex buffers for the render pass
             for (int j = 0; j < shader->vertex_buffer_count; j++) {
-                nano_vertex_buffer_t *vtx = &shader->vertex_buffers[j];
-                wgpuRenderPassEncoderSetVertexBuffer(render_pass, j,
-                                                     vtx->buffer, 0, vtx->size);
+                nano_vertex_buffer_t *vb = &shader->vertex_buffers[j];
+                nano_buffer_t *buffer = nano_get_buffer(vb->buffer_id);
+                if (buffer == NULL) {
+                    LOG_ERR(
+                        "NANO: Shader %u: Could not find vertex buffer %u\n",
+                        shader->id, buffer->id);
+                    return;
+                }
+                wgpuRenderPassEncoderSetVertexBuffer(
+                    render_pass, j, buffer->buffer, buffer->offset,
+                    buffer->size);
             }
 
             // Draw the vertex buffer
