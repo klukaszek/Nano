@@ -1,0 +1,1 @@
+-I/home/kyle/Projects/Nano/include -I/home/kyle/Projects/Nano/include/cimgui -I/home/kyle/Projects/Nano/include/cglm -I/home/kyle/Projects/Nano/include/cglm/include -I/home/kyle/Projects/Nano/include/assets/fonts -I/home/kyle/emsdk/upstream/emscripten/cache/sysroot/include/webgpu -I/home/kyle/Projects/Nano -I/home/kyle/Projects/Nano/include/cimgui/imgui

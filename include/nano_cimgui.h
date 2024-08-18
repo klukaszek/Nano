@@ -1,9 +1,9 @@
 #ifndef NANO_CIMGUI_IMPL
 
 #define NANO_CIMGUI_IMPL
+#include <assert.h>
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -186,7 +186,7 @@ typedef enum {
     KEY_RIGHT_CONTROL,
     KEY_RIGHT_ALT,
     KEY_RIGHT_SUPER,
-    KEY_MENU,
+    KEY_MENU
 } wgpu_keycode;
 
 // ----------------------------------------------------------------------------
@@ -351,7 +351,7 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
 
     // Set up ImGui style scaling
     nano_cimgui_scale_to_canvas(res_x, res_y, width, height);
-    
+
     cimgui_ready = true;
 
     return bd;
@@ -434,10 +434,11 @@ void nano_cimgui_render_draw_data(ImDrawData *draw_data,
         }
         bd->VertexBufferSize = draw_data->TotalVtxCount + 5000;
         WGPUBufferDescriptor vb_desc = {
+            .label = "Dear ImGui Vertex Buffer",
             .usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst,
             .size =
                 ((size_t)bd->VertexBufferSize * sizeof(ImDrawVert) + 3) & ~3,
-            .label = "Dear ImGui Vertex Buffer"};
+        };
         bd->VertexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &vb_desc);
     }
 
@@ -449,9 +450,10 @@ void nano_cimgui_render_draw_data(ImDrawData *draw_data,
         }
         bd->IndexBufferSize = draw_data->TotalIdxCount + 10000;
         WGPUBufferDescriptor ib_desc = {
+            .label = "Dear ImGui Index Buffer",
             .usage = WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst,
             .size = ((size_t)bd->IndexBufferSize * sizeof(ImDrawIdx) + 3) & ~3,
-            .label = "Dear ImGui Index Buffer"};
+        };
         bd->IndexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ib_desc);
     }
 
@@ -710,8 +712,8 @@ bool nano_cimgui_create_device_objects() {
 
     // Create render pipeline
     WGPURenderPipelineDescriptor pipeline_desc = {
-        .layout = pipeline_layout,
         .label = "Dear ImGui Pipeline",
+        .layout = pipeline_layout,
         .vertex = (WGPUVertexState){.module = vert_module,
                                     .entryPoint = "main",
                                     .bufferCount = 1,
@@ -764,8 +766,8 @@ bool nano_cimgui_create_font_textures() {
                                .depthOrArrayLayers = 1},
         .format = WGPUTextureFormat_RGBA8Unorm,
         .mipLevelCount = 1,
-        .sampleCount = 1,
-    };
+        .sampleCount = 1};
+
     if (bd->FontTexture)
         wgpuTextureDestroy(bd->FontTexture);
     bd->FontTexture = wgpuDeviceCreateTexture(bd->wgpuDevice, &tex_desc);
@@ -814,10 +816,11 @@ bool nano_cimgui_create_font_textures() {
 
     // Create uniform buffer
     WGPUBufferDescriptor uniform_buffer_desc = {
+        .label = "Dear ImGui Uniform Buffer",
         .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
         .size = 64, // 4x4 matrix
         .mappedAtCreation = false,
-        .label = "Dear ImGui Uniform Buffer"};
+    };
     if (bd->Uniforms)
         wgpuBufferDestroy(bd->Uniforms);
     bd->Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &uniform_buffer_desc);
@@ -943,7 +946,8 @@ void nano_cimgui_process_mousepress_event(int button, bool down) {
             io->MouseDown[2] = down; // Right
         if (button == 2)
             io->MouseDown[1] = down; // Middle
-        ILOG("nano_cimgui_process_mousepress_event() -> MB Event: %d\n", button);
+        ILOG("nano_cimgui_process_mousepress_event() -> MB Event: %d\n",
+             button);
     }
 }
 

@@ -1,0 +1,1 @@
+/home/kyle/emsdk/upstream/emscripten/em++  -s ASSERTIONS --preload-file /home/kyle/Projects/Nano/include/assets/shaders@/ -s INITIAL_MEMORY=40mb -s STACK_SIZE=32mb -s USE_WEBGPU=1 -O3  -o cube_demo.html --shell-file ../shell.html @CMakeFiles/cube_demo.dir/objects1.rsp -o cube_demo.html @CMakeFiles/cube_demo.dir/linkLibs.rsp

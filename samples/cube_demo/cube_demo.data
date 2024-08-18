@@ -1,0 +1,421 @@
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) color: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+struct Uniforms {
+    mvp: mat4x4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@vertex
+fn main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = uniforms.mvp * vec4<f32>(in.position, 0.0, 1.0);
+    out.color = in.color;
+    out.uv = in.uv;
+    return out;
+};
+
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var t: texture_2d<f32>;
+
+@fragment
+fn main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return in.color * textureSample(t, s, in.uv);
+};
+@group(0)
+@binding(0)
+var<storage, read_write> v_indices: array<u32>; // this is used as both input and output for convenience
+
+// The Collatz Conjecture states that for any integer n:
+// If n is even, n = n/2
+// If n is odd, n = 3n+1
+// And repeat this process for each new n, you will always eventually reach 1.
+// Though the conjecture has not been proven, no counterexample has ever been found.
+// This function returns how many times this recurrence needs to be applied to reach 1.
+fn collatz_iterations(n_base: u32) -> u32 {
+    var n: u32 = n_base;
+    var i: u32 = 0u;
+    loop {
+        if n <= 1u {
+            break;
+        }
+        if n % 2u == 0u {
+            n = n / 2u;
+        } else {
+            // Overflow? (i.e. 3*n + 1 > 0xffffffffu?)
+            if n >= 1431655765u {   // 0x55555555u
+                return 4294967295u;   // 0xffffffffu
+            }
+
+            n = 3u * n + 1u;
+        }
+        i = i + 1u;
+    }
+    return i;
+}
+
+@compute
+@workgroup_size(1)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    v_indices[global_id.x] = collatz_iterations(v_indices[global_id.x]);
+}
+struct Data {
+    @location(0) value: f32,
+};
+
+@group(0) @binding(0) var<storage, read_write> input : array<Data>;
+@group(0) @binding(1) var<storage, read_write> output : array<Data>;
+
+fn f(x: f32) -> f32 {
+    return x + 1.0;
+}
+
+@compute @workgroup_size(32)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let index = global_id.x;
+
+    let max_iterations = 100000;
+
+    // Run the kernel 100000 times to test the performance of Nano's
+    // compute shader compiler.
+    for (var i = 0; i < max_iterations; i = i + 1) {
+        output[index].value = f(input[index].value);
+        input[index].value = output[index].value;
+    }
+}
+struct Uniforms {
+    @align(8) time: f32,
+    @align(8) resolution: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0)
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0)
+    );
+    var output: VertexOutput;
+    output.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+    output.uv = uv[vertexIndex];
+    return output;
+}
+
+@fragment
+fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+    let aspect = uniforms.resolution.x / uniforms.resolution.y;
+    let uv_aspect = vec2<f32>((uv.x - 0.5) * aspect, uv.y - 0.5);
+    
+    // Oscillating offset
+    let offset = vec2<f32>(0.0, sin(uniforms.time * 2.0) * 0.2);
+    
+    // Calculate distance from current pixel to the oscillating center
+    let dist = length(uv_aspect - offset);
+    
+    // Circle radius
+    let radius = 0.2;
+    
+    // Smoothstep for anti-aliasing
+    let circle = 1.0 - smoothstep(radius - 0.005, radius + 0.005, dist);
+    
+    // Circle color
+    let circleColor = vec3<f32>(1.0, 0.5, 0.2);
+    
+    // Background color
+    let bgColor = vec3<f32>(0.1, 0.1, 0.1);
+    
+    let finalColor = mix(bgColor, circleColor, circle);
+    
+    return vec4<f32>(finalColor, 1.0);
+}
+// particle_compute.wgsl
+
+struct Particle {
+    position: vec2<f32>;
+    velocity: vec2<f32>;
+    color: vec4<f32>;
+    size: f32;
+    density: f32;
+    pressure: f32;
+};
+
+struct SimulationParams {
+    timestep: f32;
+    grid_size: f32;
+    mass: f32;
+    gas_constant: f32;
+    rest_density: f32;
+};
+
+// Input bindings for particles and simulation parameters
+@group(0) @binding(0) var<storage, read_write> particles : array<Particle>;
+@group(0) @binding(1) var<uniform> params : SimulationParams;
+@group(0) @binding(2) var<uniform> dimensions : vec2<f32>;
+
+// Compute the kernel function for the given distance and grid size
+fn kernel(r: f32, h: f32) -> f32 {
+    if r > h {
+        return 0.0;
+    }
+    let k = 315.0 / (64.0 * PI * pow(h, 9.0));
+    return k * pow(h * h - r * r, 3.0);
+}
+
+// Compute the gradient of the kernel function for the given distance and grid size
+fn grad_kernel(r: f32, h: f32) -> f32 {
+    if r > h {
+        return 0.0;
+    }
+    let k = -945.0 / (32.0 * PI * pow(h, 9.0));
+    return k * pow(h * h - r * r, 2.0);
+}
+
+// Compute the physics simulation for each particle
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let index = global_id.x;
+    if index >= arrayLength(&particles) {
+        return;
+    }
+
+    var p = &particles[index];
+    p.density = 0.0;
+    p.pressure = 0.0;
+
+    // Compute density and pressure
+    for (var i = 0u; i < arrayLength(&particles); i++) {
+        let q = &particles[i];
+        let distance = distance(p.position, q.position);
+        if distance < params.grid_size {
+            p.density += params.mass * kernel(distance, params.grid_size);
+        }
+    }
+    p.pressure = params.gas_constant * (p.density - params.rest_density);
+
+    // Compute forces applied to the particle being simulated
+    var force = vec2<f32>(0.0, 0.0);
+    for (var i = 0u; i < arrayLength(&particles); i++) {
+        if i != index {
+            let q = &particles[i];
+            let distance = distance(p.position, q.position);
+            if distance < params.grid_size {
+                let pressure_force = -0.5 * (p.pressure + q.pressure) / q.density * grad_kernel(distance, params.grid_size);
+                force += pressure_force * normalize(p.position - q.position);
+            }
+        }
+    }
+
+    // Update velocity and position
+    p.velocity += force * params.timestep;
+    p.position += p.velocity * params.timestep;
+
+    // Boundary conditions
+    if p.position.x < 0.0 || p.position.x > dimensions.x {
+        p.velocity.x = -p.velocity.x;
+    }
+    if p.position.y < 0.0 || p.position.y > dimensions.y {
+        p.velocity.y = -p.velocity.y;
+    }
+}
+// particle_render.wgsl
+struct Particle {
+    position: vec2<f32>;
+    velocity: vec2<f32>;
+    color: vec4<f32>;
+    size: f32;
+    density: f32;
+    pressure: f32;
+};
+
+// Binding for particle data
+@group(0) @binding(0) var<storage, read> particles : array<Particle>;
+
+// Vertex output structure
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>;
+    @location(0) color: vec4<f32>;
+    @location(1) size: f32;
+    @location(2) point_coord: vec2<f32>;
+};
+
+// Vertex shader
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var output: VertexOutput;
+    let particle = particles[vertex_index];
+    output.position = vec4<f32>(particle.position, 0.0, 1.0);
+    output.color = particle.color;
+    output.size = particle.size;
+    output.point_coord = vec2<f32>(0.5, 0.5); // Center of the point sprite
+    return output;
+}
+
+// Fragment shader
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let dist = length(input.point_coord - vec2<f32>(0.5, 0.5));
+    if dist > 0.5 {
+        discard; // Discard pixels outside the circle
+    }
+    // Elastic effect: adjust alpha based on distance from center
+    let alpha = 1.0 - smoothstep(0.45, 0.5, dist);
+    return vec4<f32>(input.color.rgb, input.color.a * alpha);
+}
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) color: vec4<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.clip_position = vec4<f32>(in.position, 1.0);
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return in.color;
+}
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) tex_coord: vec2<f32>,
+};
+
+@group(0) @binding(0) var texture: texture_2d<f32>;
+@group(0) @binding(1) var tex_storage: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var texture_sampler: sampler;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(vertex_index & 1u) * 2.0 - 1.0;
+    let y = f32(vertex_index & 2u) - 1.0;
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.tex_coord = vec2<f32>(x * 0.5 + 0.5, y * 0.5 + 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(texture, texture_sampler, in.tex_coord);
+}
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>(0.5, -0.5),
+        vec2<f32>(0.0, 0.5)
+    );
+
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.5, 1.0)
+    );
+
+    var output: VertexOutput;
+    output.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+    output.uv = uv[vertexIndex];
+    return output;
+}
+
+@fragment
+fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+    return vec4<f32>(uv.x, uv.y, 0.0, 1.0);
+}
+struct Uniforms {
+    @align(8) time: f32,
+    @align(8) resolution: vec2<f32>,
+    @align(4) frequency: f32,
+    @align(4) amplitude: f32,
+    @align(4) speed: f32,
+    @align(4) thickness: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0)
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0)
+    );
+    var output: VertexOutput;
+    output.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+    output.uv = uv[vertexIndex];
+    return output;
+}
+
+@fragment
+fn fs_main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+
+    // Parameters for the sine wave
+    let time = uniforms.time;
+    let frequency = uniforms.frequency;
+    let amplitude = uniforms.amplitude;
+    let speed = uniforms.speed;
+    let thickness = uniforms.thickness;
+
+    // Calculate the y-position of the sine wave
+    let wave_y = sin((uv.x + time * speed) * frequency) * amplitude + 0.5;
+
+    // Calculate distance from current pixel to the sine wave
+    let dist = abs(uv.y - wave_y);
+
+    // Smoothstep for anti-aliasing
+    let line = 1.0 - smoothstep(0.0, thickness, dist);
+
+    // Wave color
+    let waveColor = vec3<f32>(0.0, 0.7, 1.0);  // Light blue color
+
+    // Background color
+    let bgColor = vec3<f32>(0.1, 0.1, 0.1);
+
+    let finalColor = mix(bgColor, waveColor, line);
+
+    return vec4<f32>(finalColor, 1.0);
+}
