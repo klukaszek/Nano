@@ -248,11 +248,14 @@ typedef enum {
     TEXTURE,
     STORAGE_TEXTURE,
     SAMPLER,
+    SAMPLER_COMPARISON,
 } nano_binding_type;
 
-// typedefs for the necessary binding information
-// this is used to create a union for the different binding types
+// Binding information for a buffer
 typedef WGPUBufferUsageFlags nano_buffer_usage_t;
+
+// Binding information for a sampler
+typedef WGPUSamplerBindingType nano_sampler_type_t;
 
 // Binding information for a texture
 typedef struct {
@@ -262,21 +265,6 @@ typedef struct {
     WGPUStorageTextureAccess access;
     WGPUTextureUsageFlags usage;
 } nano_texture_info_t;
-
-// Binding information for a sampler
-typedef struct {
-    WGPUSamplerBindingType type;
-    WGPUAddressMode address_mode_u;
-    WGPUAddressMode address_mode_v;
-    WGPUAddressMode address_mode_w;
-    WGPUFilterMode mag_filter;
-    WGPUFilterMode min_filter;
-    WGPUFilterMode mipmap_filter;
-    float lod_min_clamp;
-    float lod_max_clamp;
-    WGPUCompareFunction compare;
-    float max_anisotropy;
-} nano_sampler_info_t;
 
 // Keep track order of entry points in the shader
 typedef struct {
@@ -343,18 +331,12 @@ typedef struct {
     nano_binding_type binding_type;
 
     // Store the reference to whatever the binding is
+    // size of the union is that of a pointer
     union {
         WGPUBuffer buffer;
         WGPUTextureView texture_view;
         WGPUSampler sampler;
     } data;
-
-    // Store the information about the binding
-    union {
-        nano_buffer_usage_t buffer_usage;
-        nano_texture_info_t texture;
-        nano_sampler_info_t sampler;
-    } info;
 
     int group;
     int binding;
@@ -362,6 +344,15 @@ typedef struct {
     uint32_t shader_id;
     char data_type[32];
     char name[NANO_MAX_IDENT_LENGTH];
+
+    // Store the information about the binding
+    // size of the union is the nano_texture_info_t struct
+    union {
+        nano_buffer_usage_t buffer_usage;
+        nano_sampler_type_t sampler_type;
+        nano_texture_info_t texture_info;
+    } info;
+
 } nano_binding_info_t;
 
 // Nano Pipeline Declarations
@@ -705,6 +696,8 @@ nano_binding_type parse_binding_type(nano_wgsl_parser_t *parser) {
         type = STORAGE_TEXTURE;
     } else if (strncmp(identifier, "texture_", 8) == 0) {
         type = TEXTURE;
+    } else if (strncmp(identifier, "sampler_comparison", 18) == 0) {
+        type = SAMPLER_COMPARISON;
     } else if (strncmp(identifier, "sampler", 7) == 0) {
         type = SAMPLER;
     }
@@ -716,61 +709,69 @@ nano_binding_type parse_binding_type(nano_wgsl_parser_t *parser) {
 void parse_texture(nano_wgsl_parser_t *parser, nano_binding_info_t *bi) {
     char texture_type[NANO_MAX_IDENT_LENGTH];
     parse_identifier(parser, texture_type, true);
-    
-    // The last parsed bit should be "texture_" so we can check if it is a storage texture or not
-    // byt just parsing the next bit of the identifier
-    bi->info.texture.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-    bi->info.texture.sample_type = WGPUTextureSampleType_Float;  // Default to float
-    bi->info.texture.format = WGPUTextureFormat_RGBA8Unorm;  // Default format
-    bi->info.texture.access = WGPUStorageTextureAccess_Undefined; // This should only be set for storage textures
+
+    // The last parsed bit should be "texture_" so we can check if it is a
+    // storage texture or not byt just parsing the next bit of the identifier
+    bi->info.texture_info.usage =
+        WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    bi->info.texture_info.sample_type =
+        WGPUTextureSampleType_Float;                        // Default to float
+    bi->info.texture_info.format = WGPUTextureFormat_RGBA8Unorm; // Default format
+    bi->info.texture_info.access =
+        WGPUStorageTextureAccess_Undefined; // This should only be set for
+                                            // storage textures
 
     // Determine view dimension
     if (strstr(texture_type, "_1d") != NULL) {
-        bi->info.texture.view_dimension = WGPUTextureViewDimension_1D;
+        bi->info.texture_info.view_dimension = WGPUTextureViewDimension_1D;
     } else if (strstr(texture_type, "_2d") != NULL) {
-        bi->info.texture.view_dimension = WGPUTextureViewDimension_2D;
+        bi->info.texture_info.view_dimension = WGPUTextureViewDimension_2D;
     } else if (strstr(texture_type, "_3d") != NULL) {
-        bi->info.texture.view_dimension = WGPUTextureViewDimension_3D;
+        bi->info.texture_info.view_dimension = WGPUTextureViewDimension_3D;
     } else if (strstr(texture_type, "_cube") != NULL) {
-        bi->info.texture.view_dimension = WGPUTextureViewDimension_Cube;
+        bi->info.texture_info.view_dimension = WGPUTextureViewDimension_Cube;
     } else {
-        bi->info.texture.view_dimension = WGPUTextureViewDimension_2D;  // Default to 2D
+        bi->info.texture_info.view_dimension =
+            WGPUTextureViewDimension_2D; // Default to 2D
     }
 
     // For regular textures, determine sample type
     if (bi->binding_type == TEXTURE) {
         if (strstr(texture_type, "<f32>") != NULL) {
-            bi->info.texture.sample_type = WGPUTextureSampleType_Float;
+            bi->info.texture_info.sample_type = WGPUTextureSampleType_Float;
         } else if (strstr(texture_type, "<i32>") != NULL) {
-            bi->info.texture.sample_type = WGPUTextureSampleType_Sint;
+            bi->info.texture_info.sample_type = WGPUTextureSampleType_Sint;
         } else if (strstr(texture_type, "<u32>") != NULL) {
-            bi->info.texture.sample_type = WGPUTextureSampleType_Uint;
+            bi->info.texture_info.sample_type = WGPUTextureSampleType_Uint;
         }
     }
     // For storage textures, determine format and access
     else if (bi->binding_type == STORAGE_TEXTURE) {
-        // Parse format (this is a simplified example, you might need to handle more formats)
+        // Parse format (this is a simplified example, you might need to handle
+        // more formats)
         if (strstr(texture_type, "rgba8unorm") != NULL) {
-            bi->info.texture.format = WGPUTextureFormat_RGBA8Unorm;
+            bi->info.texture_info.format = WGPUTextureFormat_RGBA8Unorm;
         } else if (strstr(texture_type, "rgba8unorm_srgb") != NULL) {
-            bi->info.texture.format = WGPUTextureFormat_RGBA8UnormSrgb;
+            bi->info.texture_info.format = WGPUTextureFormat_RGBA8UnormSrgb;
         } else {
-            LOG("NANO: Binding %s: Unsupported storage texture format, defaulting to RGBA8Unorm\n", bi->name);
+            LOG("NANO: Shader %u: Binding %s: Unsupported storage texture "
+                "format, defaulting to RGBA8Unorm\n",
+                bi->shader_id, bi->name);
         }
         // Parse access mode
         if (strstr(texture_type, ", read>") != NULL) {
-            bi->info.texture.access = WGPUStorageTextureAccess_ReadOnly;
+            bi->info.texture_info.access = WGPUStorageTextureAccess_ReadOnly;
         } else if (strstr(texture_type, ", write>") != NULL) {
-            bi->info.texture.access = WGPUStorageTextureAccess_WriteOnly;
+            bi->info.texture_info.access = WGPUStorageTextureAccess_WriteOnly;
         } else if (strstr(texture_type, ", read_write>") != NULL) {
-            bi->info.texture.access = WGPUStorageTextureAccess_ReadWrite;
+            bi->info.texture_info.access = WGPUStorageTextureAccess_ReadWrite;
         }
 
         // Adjust usage based on access mode
-        if (bi->info.texture.access == WGPUStorageTextureAccess_ReadOnly) {
-            bi->info.texture.usage |= WGPUTextureUsage_TextureBinding;
+        if (bi->info.texture_info.access == WGPUStorageTextureAccess_ReadOnly) {
+            bi->info.texture_info.usage |= WGPUTextureUsage_TextureBinding;
         } else {
-            bi->info.texture.usage |= WGPUTextureUsage_StorageBinding;
+            bi->info.texture_info.usage |= WGPUTextureUsage_StorageBinding;
         }
     }
 }
@@ -814,7 +815,6 @@ void parse_binding(nano_wgsl_parser_t *parser, wgpu_shader_info_t *info) {
         next(parser); // Skip '<'
 
         buffer_usage = parse_storage_class_and_access(parser);
-
         next(parser); // Skip '>'
         skip_whitespace(parser);
     }
@@ -849,6 +849,10 @@ void parse_binding(nano_wgsl_parser_t *parser, wgpu_shader_info_t *info) {
             parse_identifier(parser, bi->data_type, true);
             break;
         case SAMPLER:
+            bi->info.sampler_type = WGPUSamplerBindingType_Filtering;
+            break;
+        case SAMPLER_COMPARISON:
+            bi->info.sampler_type = WGPUSamplerBindingType_Comparison;
             break;
     }
 }
@@ -947,20 +951,26 @@ void nano_print_shader_info(wgpu_shader_info_t *info) {
     for (int i = 0; i < info->binding_count; i++) {
         nano_binding_info_t *bi = &info->bindings[i];
         LOG("Binding %d:\n", i);
-        LOG("\tName: %s\n", bi->name);
         LOG("\tGroup: %d\n", bi->group);
         LOG("\tBinding: %d\n", bi->binding);
-        
+        LOG("\tName: %s\n", bi->name);
+
         if (bi->binding_type == BUFFER) {
             LOG("\tType: Buffer\n");
             LOG("\tData Type: %s\n", bi->data_type);
             LOG("\tBuffer Usage: 0x%x\n", bi->info.buffer_usage);
-        } else if (bi->binding_type == TEXTURE || bi->binding_type == STORAGE_TEXTURE) {
-            LOG("\tType: %s\n", bi->binding_type == TEXTURE ? "Texture" : "Storage Texture");
-            LOG("\tView Dimension: %d\n", bi->info.texture.view_dimension);
-            LOG("\tSample Type: %d\n", bi->info.texture.sample_type);
-            LOG("\tFormat: %d\n", bi->info.texture.format);
-            LOG("\tUsage: 0x%x\n", bi->info.texture.usage);
+        } else if (bi->binding_type == TEXTURE ||
+                   bi->binding_type == STORAGE_TEXTURE) {
+            LOG("\tType: %s\n",
+                bi->binding_type == TEXTURE ? "Texture" : "Storage Texture");
+            LOG("\tView Dimension: %d\n", bi->info.texture_info.view_dimension);
+            LOG("\tSample Type: %d\n", bi->info.texture_info.sample_type);
+            LOG("\tFormat: %d\n", bi->info.texture_info.format);
+            LOG("\tUsage: 0x%x\n", bi->info.texture_info.usage);
+        } else if (bi->binding_type == SAMPLER) {
+            LOG("\tType: Filtering Sampler\n");
+        } else if (bi->binding_type == SAMPLER_COMPARISON) {
+            LOG("\tType: Comparison Sampler\n");
         }
     }
     for (int i = 0; i < info->entry_point_count; i++) {
@@ -1348,8 +1358,8 @@ int nano_shader_bind_uniforms(nano_shader_t *shader, nano_buffer_t *buffer,
 // Creates a buffer object for the vertex data. This buffer must be bound with
 // the WGPUVertexBufferLayout struct before it can be used in the vertex shader.
 // See nano_shader_bind_vertex_buffer() for more information.
-uint32_t nano_create_vertex_buffer(size_t size, size_t offset,
-                                   void *data, char *label) {
+uint32_t nano_create_vertex_buffer(size_t size, size_t offset, void *data,
+                                   char *label) {
     if (size == 0) {
         LOG_ERR(
             "NANO: nano_create_vertex_buffer() -> Vertex buffer size is 0\n");
@@ -1516,7 +1526,7 @@ int nano_shader_bind_vertex_buffer(nano_shader_t *shader, uint32_t buffer_id,
 
 // Remove a vertex buffer from the shader and shift the rest of the vertex
 // buffers down. This does not free the buffered data from the GPU, it just
-// removes the vertex buffer from the shader. 
+// removes the vertex buffer from the shader.
 // You should call nano_release_buffer() to free the buffer data.
 int nano_shader_remove_vertex_buffer(nano_shader_t *shader,
                                      uint32_t buffer_id) {
@@ -2480,7 +2490,7 @@ int nano_build_bindgroups(nano_shader_t *shader) {
         // Otherwise we create a BindGroupEntry list for each binding in the
         // group
         WGPUBindGroupEntry bg_entry[count];
-        
+
         // Iterate through the bindings in the group and create the bind
         // group. Remember: when defining bindings, make sure to not skip
         // numbers. Always increase the binding number by 1, or increase the
@@ -2767,7 +2777,8 @@ int nano_shader_set_num_elems(nano_shader_t *shader, size_t count) {
 
     if (shader->in_use) {
         LOG_ERR("NANO: Shader %u: nano_shader_set_num_elems() -> Shader is "
-                "currently in use.\n", shader->id);
+                "currently in use.\n",
+                shader->id);
         return NANO_FAIL;
     }
 
