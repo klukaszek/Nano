@@ -102,14 +102,9 @@ static void init(void) {
 
     // Create a uniform buffer
     uint32_t buffer_id = nano_create_buffer(binding, sizeof(uniform_data), 1, 0, &uniform_data);
-    nano_buffer_t *uniform_buffer = nano_get_buffer(buffer_id);
-    if (!uniform_buffer) {
-        LOG("Failed to get uniform buffer\n");
-        return;
-    }
     
     // Assign the uniform buffer to the shader
-    int status = nano_shader_bind_uniforms(wave_shader, uniform_buffer, 0, 0);
+    int status = nano_shader_bind_uniforms(wave_shader, buffer_id, 0, 0);
     if (status == NANO_FAIL) {
         LOG("Failed to assign uniform data\n");
         return;

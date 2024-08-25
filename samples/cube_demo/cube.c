@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
@@ -6,6 +7,7 @@
 #include "JetBrainsMonoNerdFontMono-Bold.h"
 #include "LilexNerdFontMono-Medium.h"
 #include "Roboto-Regular.h"
+#include "cglm/cglm.h"
 #include <webgpu/webgpu.h>
 
 // Toggles stdout logging and enables the nano debug imgui overlay
@@ -32,14 +34,86 @@ nano_shader_t *cube_shader;
 char shader_path[256];
 char shader_code[8192];
 
+typedef struct {
+    float position[3];
+    float color[3];
+} Vertex;
+
+Vertex cube_vertices[] = {
+    // Front face
+    {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}},
+    
+    // Back face
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
+    {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},
+    {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{-0.5f,  0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}
+};
+
+uint16_t cube_indices[] = {
+    // Front face
+    0, 1, 2,  2, 3, 0,
+    // Right face
+    1, 5, 6,  6, 2, 1,
+    // Back face
+    5, 4, 7,  7, 6, 5,
+    // Left face
+    4, 0, 3,  3, 7, 4,
+    // Top face
+    3, 2, 6,  6, 7, 3,
+    // Bottom face
+    4, 5, 1,  1, 0, 4
+};
+
+WGPUVertexAttribute attributes[2] = {
+    {
+        .format = WGPUVertexFormat_Float32x3,
+        .offset = offsetof(Vertex, position),
+        .shaderLocation = 0
+    },
+    {
+        .format = WGPUVertexFormat_Float32x3,
+        .offset = offsetof(Vertex, color),
+        .shaderLocation = 1
+    }
+};
+
+// Define the matrices needed for 3D projection
+mat4 model, view, projection, mvp;
+
 // When using the uniform buffer with Nano, if the shader is not working as
 // expected, you should use the @align(n) directive in the shader to align the
 // buffer in multiples of 16 bytes. See assets/shaders/dot.wgsl for an example.
 struct UniformBuffer {
-    float time;          // 4 bytes
-    float padding;       // 4 bytes
-    float resolution[2]; // 8 bytes
-} uniform_buffer; // 16 bytes
+    float mvp[16]; // 4x4 matrix (16 floats x 4 bytes = 64 bytes)
+    vec4 color; // 4 floats (16 bytes)
+    float time; // 1 float (4 bytes)
+    float padding[3]; // Padding to ensure 16-byte alignment
+} __attribute__((aligned((16)))) uniform_data; // 16 bytes
+
+void update_mvp() {
+    glm_mat4_identity(model);
+    glm_rotate(model, uniform_data.time, (vec3){0.5f, 1.0f, 0.0f});
+    glm_translate(model, (vec3){0.0f, 0.0f, -1.0f});
+
+    glm_mat4_identity(view);
+    glm_lookat((vec3){0.0f, 0.0f, 3.0f}, (vec3){0.0f, 0.0f, 0.0f},
+               (vec3){0.0f, 1.0f, 0.0f}, view);
+
+    glm_mat4_identity(projection);
+    glm_perspective(glm_rad(90.0f),
+                    (float)nano_app.wgpu->width / (float)nano_app.wgpu->height,
+                    0.1f, 100.0f, projection);
+
+    glm_mat4_mul(projection, view, mvp);
+    glm_mat4_mul(mvp, model, mvp);
+
+    // Assign the mvp matrix to the uniform buffer
+    memcpy(uniform_data.mvp, mvp, sizeof(float) * 16);
+}
 
 // Initialization callback passed to nano_start_app()
 static void init(void) {
@@ -55,16 +129,50 @@ static void init(void) {
     LOG("DEMO: Max Vertex Attributes: %u\n", limits.limits.maxVertexAttributes);
 
     // Fragment and Vertex shader creation
-    char cube_shader_name[] = "texture.wgsl";
+    char cube_shader_name[] = "cube.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH, cube_shader_name);
-    
-    // Initialize the uniform buffer
-    uniform_buffer.time = 0.0f;
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
 
-    uint32_t shader_id = nano_create_shader_from_file(shader_path, cube_shader_name);
+    // Assign values to the uniform buffer
+    uniform_data.time = 0.0f;
+
+    // Set the color to white
+    glm_vec4_one(uniform_data.color);
+
+    // Initialize the model, view, and projection matrices
+    update_mvp();
+
+    uint32_t shader_id =
+        nano_create_shader_from_file(shader_path, cube_shader_name);
     cube_shader = nano_get_shader(shader_id);
+
+    uint32_t vertex_buffer_id = nano_create_vertex_buffer(
+        sizeof(cube_vertices), 0, &cube_vertices, NULL);
+
+    // Assign the vertex buffer to the shader
+    nano_shader_bind_vertex_buffer(cube_shader, vertex_buffer_id,
+                                   (WGPUVertexAttribute *)&attributes, 2,
+                                   sizeof(Vertex));
+
+    uint32_t index_buffer_id =
+        nano_create_index_buffer(sizeof(cube_indices), 0, &cube_indices, NULL);
+
+    nano_shader_bind_index_buffer(cube_shader, index_buffer_id,
+                                  WGPUIndexFormat_Uint16);
+
+    nano_binding_info_t *binding = nano_shader_get_binding(cube_shader, 0, 0);
+    if (!binding) {
+        LOG("Failed to get binding\n");
+        return;
+    }
+
+    // Create a uniform buffer
+    uint32_t uniform_buffer_id =
+        nano_create_buffer(binding, sizeof(uniform_data), 1, 0, &uniform_data);
+
+    // Bind the uniform buffer to the shader
+    nano_shader_bind_uniforms(cube_shader, uniform_buffer_id, 0, 0);
+
+    nano_shader_set_vertex_count(cube_shader, 36);
 
     nano_print_shader_info(&cube_shader->info);
 
@@ -75,7 +183,7 @@ static void init(void) {
     // will rebuild the shader.
     // This will build the pipeline layouts, bind groups, and necessary
     // pipelines.
-    // nano_shader_activate(cube_shader, true);
+    nano_shader_activate(cube_shader, true);
 }
 
 // Frame callback passed to nano_start_app()
@@ -101,15 +209,18 @@ static void frame(void) {
     igSetNextWindowSize((ImVec2){0, 75}, ImGuiCond_FirstUseEver);
     igBegin("Nano Wave Demo", NULL, 0);
     igText("This demo shows how to make a simple cube using Nano.");
+
+    igText("Time: %.2fs", uniform_data.time);
+    igSliderFloat4("Color", uniform_data.color, 0.0f, 1.0f, "%.2f", 1.0f);
+
     igEnd();
 
     // Change Nano app state at end of frame
     nano_end_frame();
 
     // Update the uniform buffer
-    uniform_buffer.resolution[0] = nano_app.wgpu->width;
-    uniform_buffer.resolution[1] = nano_app.wgpu->height;
-    uniform_buffer.time += 0.01;
+    uniform_data.time += nano_app.frametime / 1000.0f;
+    update_mvp();
 }
 
 // Shutdown callback passed to nano_start_app()

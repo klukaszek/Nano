@@ -262,8 +262,8 @@ static WGPUTextureView wgpu_get_resolve_view(void) {
     }
 }
 
-static const void *wgpu_get_depth_stencil_view(void) {
-    return (const void *)state.depth_stencil_view;
+static WGPUTextureView wgpu_get_depth_stencil_view(void) {
+    return state.depth_stencil_view;
 }
 
 static WGPUTextureFormat wgpu_get_color_format(void) {
@@ -271,11 +271,7 @@ static WGPUTextureFormat wgpu_get_color_format(void) {
 }
 
 static WGPUTextureFormat wgpu_get_depth_format(void) {
-    if (state.desc.no_depth_buffer) {
-        return WGPUTextureFormat_Undefined;
-    } else {
-        return WGPUTextureFormat_Depth32FloatStencil8;
-    }
+    return WGPUTextureFormat_Depth32FloatStencil8;
 }
 
 // Expose a function to toggle fullscreen so we can use any key to toggle

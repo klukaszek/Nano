@@ -251,20 +251,17 @@ static void init(void) {
     uint32_t output_id =
         nano_create_buffer(output_binding, buffer_size, NUM_DATA, 0, NULL);
 
-    // Get the buffers from the buffer pool and write to the input one.
-    nano_buffer_t *input_buffer = nano_get_buffer(input_id);
-    nano_buffer_t *output_buffer = nano_get_buffer(output_id);
-    nano_write_buffer(input_buffer);
+    nano_write_buffer(input_id);
 
     // Bind input buffer to the compute shader
-    int status = nano_shader_bind_buffer(compute_shader, input_buffer, 0, 0);
+    int status = nano_shader_bind_buffer(compute_shader, input_id, 0, 0);
     if (status == NANO_FAIL) {
         LOG("DEMO: Failed to bind buffer to shader\n");
         return;
     }
 
     // Bind output buffer to the compute shader
-    status = nano_shader_bind_buffer(compute_shader, output_buffer, 0, 1);
+    status = nano_shader_bind_buffer(compute_shader, output_id, 0, 1);
     if (status == NANO_FAIL) {
         LOG("DEMO: Failed to bind buffer to shader\n");
         return;

@@ -19,7 +19,7 @@ set(FILES cube.c)
 
 # Add the cube_demo executable 
 add_executable(cube_demo ${FILES})
-target_link_libraries(cube_demo cimgui)
+target_link_libraries(cube_demo cimgui cglm)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(cube_demo PROPERTIES
