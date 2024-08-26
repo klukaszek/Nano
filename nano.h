@@ -2540,7 +2540,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                 (WGPUMultisampleState){
                     .count = nano_app.settings.gfx.msaa.sample_count,
                     .mask = ~0u,
-                    .alphaToCoverageEnabled = true,
+                    .alphaToCoverageEnabled = false,
                 },
             .fragment = shader->fragment_state != NULL
                             ? shader->fragment_state
