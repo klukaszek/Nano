@@ -1,4 +1,3 @@
-#include <math.h>
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
@@ -36,60 +35,50 @@ char shader_code[8192];
 
 typedef struct {
     float position[3];
-    float color[4];
-} VertexData;
+} Vertex;
 
-VertexData cube_vertex_data[] = {
-    // Front face
-    {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f, 1.0}},
-    {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f, 1.0}},
-    {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f, 1.0}},
-    {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f, 1.0}},
-    
-    // Back face
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f, 1.0}},
-    {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f, 1.0}},
-    {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f, 1.0}},
-    {{-0.5f,  0.5f, -0.5f}, {0.5f, 0.5f, 0.5f, 1.0}}
+Vertex cube_vertex_data[] = {
+    {{-0.5f, -0.5f, 0.5f}}, {{0.5f, -0.5f, 0.5f}},   {{0.5f, 0.5f, 0.5f}},
+    {{-0.5f, 0.5f, 0.5f}},  {{-0.5f, -0.5f, -0.5f}}, {{0.5f, -0.5f, -0.5f}},
+    {{0.5f, 0.5f, -0.5f}},  {{-0.5f, 0.5f, -0.5f}},
 };
 
-uint16_t cube_indices[] = {
-    // Front face
-    0, 1, 2,  2, 3, 0,
-    // Right face
-    1, 5, 6,  6, 2, 1,
-    // Back face
-    5, 4, 7,  7, 6, 5,
-    // Left face
-    4, 0, 3,  3, 7, 4,
-    // Top face
-    3, 2, 6,  6, 7, 3,
-    // Bottom face
-    4, 5, 1,  1, 0, 4
+// Indices for wireframe mode (unchanged)
+uint16_t wireframe_indices[] = {
+    0, 1, 1, 2, 2, 3, 3, 0, // front face
+    4, 5, 5, 6, 6, 7, 7, 4, // back face
+    0, 4, 1, 5, 2, 6, 3, 7, // connecting edges
+    0, 6, 1, 7, 2, 4, 3, 5  // diagonals
 };
 
-WGPUVertexAttribute attributes[2] = {
-    {
-        .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(VertexData, position),
-        .shaderLocation = 0
-    },
-    {
-        .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(VertexData, color),
-        .shaderLocation = 1
-    }
+// Indices for filled triangle mode (unchanged)
+uint16_t filled_indices[] = {
+    0, 1, 2, 2, 3, 0, // front face
+    1, 5, 6, 6, 2, 1, // right face
+    5, 4, 7, 7, 6, 5, // back face
+    4, 0, 3, 3, 7, 4, // left face
+    3, 2, 6, 6, 7, 3, // top face
+    4, 5, 1, 1, 0, 4  // bottom face
+};
+
+WGPUVertexAttribute attributes[1] = {
+    {.format = WGPUVertexFormat_Float32x3, .offset = 0, .shaderLocation = 0},
 };
 
 // Define the matrices needed for 3D projection
 mat4 model, view, projection, mvp;
+bool wireframe_mode = false;
+
+uint32_t filled_index_buffer_id;
+uint32_t wireframe_index_buffer_id;
 
 // When using the uniform buffer with Nano, if the shader is not working as
 // expected, you should use the @align(n) directive in the shader to align the
 // buffer in multiples of 16 bytes. See assets/shaders/dot.wgsl for an example.
 struct UniformBuffer {
-    float mvp[16]; // 4x4 matrix (16 floats x 4 bytes = 64 bytes)
-    float time; // 1 float (4 bytes)
+    float mvp[16];    // 4x4 matrix (16 floats x 4 bytes = 64 bytes)
+    float color[3];   // 3 floats (12 bytes)
+    float time;       // 1 float (4 bytes)
     float padding[3]; // Padding to ensure 16-byte alignment
 } __attribute__((aligned((16)))) uniform_data; // 16 bytes
 
@@ -97,14 +86,14 @@ void update_mvp() {
 
     // Update the model matrix and have it rotate around the y axis
     glm_mat4_identity(model);
-    glm_rotate(model, uniform_data.time, (vec3){0.0f, 1.0f, 0.0f});
-    glm_translate(model, (vec3){0.0f, 0.0f, -1.0f});
-    
+    glm_rotate(model, uniform_data.time, (vec3){0.0f, 0.01f, 0.0f});
+    glm_translate(model, (vec3){0.0f, 0.0f, 0.0f});
+
     // Update the view matrix
     glm_mat4_identity(view);
     glm_lookat((vec3){0.0f, 0.0f, 3.0f}, (vec3){0.0f, 0.0f, 0.0f},
                (vec3){0.0f, 1.0f, 0.0f}, view);
-    
+
     // Update the projection matrix with a 90 degree field of view
     glm_mat4_identity(projection);
     glm_perspective(glm_rad(90.0f),
@@ -128,15 +117,19 @@ static void init(void) {
     WGPUSupportedLimits limits;
     wgpuDeviceGetLimits(nano_app.wgpu->device, &limits);
 
-    LOG("DEMO: Max VertexData Buffers: %u\n", limits.limits.maxVertexBuffers);
-    LOG("DEMO: Max VertexData Attributes: %u\n", limits.limits.maxVertexAttributes);
+    LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
+    LOG("DEMO: Max Vertex Attributes: %u\n",
+        limits.limits.maxVertexAttributes);
 
-    // Fragment and VertexData shader creation
+    // Fragment and Vertex shader creation
     char cube_shader_name[] = "cube.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH, cube_shader_name);
 
     // Assign values to the uniform buffer
     uniform_data.time = 0.0f;
+    uniform_data.color[0] = 1.0f;
+    uniform_data.color[1] = 0.0f;
+    uniform_data.color[2] = 0.0f;
 
     // Initialize the model, view, and projection matrices
     update_mvp();
@@ -144,24 +137,28 @@ static void init(void) {
     uint32_t shader_id =
         nano_create_shader_from_file(shader_path, cube_shader_name);
     cube_shader = nano_get_shader(shader_id);
-    
+
     // Create a vertex buffer for the cube
     uint32_t vertex_buffer_id = nano_create_vertex_buffer(
         sizeof(cube_vertex_data), 0, &cube_vertex_data, NULL);
 
     // Assign the vertex buffer to the shader
     nano_shader_bind_vertex_buffer(cube_shader, vertex_buffer_id,
-                                   (WGPUVertexAttribute *)&attributes, 2,
-                                   sizeof(VertexData));
-    
-    // Create an index buffer for the cube
-    uint32_t index_buffer_id =
-        nano_create_index_buffer(sizeof(cube_indices), 0, &cube_indices, NULL);
+                                   (WGPUVertexAttribute *)&attributes, 1,
+                                   sizeof(float) * 3);
 
-    // Assign the index buffer to the shader
-    nano_shader_bind_index_buffer(cube_shader, index_buffer_id,
+    // Create an index buffer for the filled cube
+    filled_index_buffer_id = nano_create_index_buffer(
+        sizeof(filled_indices), 0, &filled_indices, "solid_cube");
+
+    // Create an index buffer for the wireframe cube
+    wireframe_index_buffer_id = nano_create_index_buffer(
+        sizeof(wireframe_indices), 0, &wireframe_indices, "wireframe_cube");
+
+    // Assign the filled index buffer to the shader
+    nano_shader_bind_index_buffer(cube_shader, filled_index_buffer_id,
                                   WGPUIndexFormat_Uint16);
-    
+
     // Get the binding info for the uniforms at (0, 0)
     nano_binding_info_t *binding = nano_shader_get_binding(cube_shader, 0, 0);
     if (!binding) {
@@ -176,7 +173,8 @@ static void init(void) {
     // Bind the uniform buffer to the shader
     nano_shader_bind_uniforms(cube_shader, uniform_buffer_id, 0, 0);
 
-    nano_shader_set_vertex_count(cube_shader, 36);
+    nano_shader_set_vertex_count(cube_shader,
+                                 sizeof(filled_indices) / sizeof(uint16_t));
 
     nano_print_shader_info(&cube_shader->info);
 
@@ -210,9 +208,19 @@ static void frame(void) {
     igSetNextWindowPos(
         (ImVec2){nano_app.wgpu->width - (nano_app.wgpu->width) * 0.5, 25},
         ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-    igSetNextWindowSize((ImVec2){0, 75}, ImGuiCond_FirstUseEver);
-    igBegin("Nano Wave Demo", NULL, 0);
+    igSetNextWindowSize((ImVec2){0, 150}, ImGuiCond_FirstUseEver);
+    igBegin("Nano Cube Demo", NULL, 0);
     igText("This demo shows how to make a simple cube using Nano.");
+    igText("This demo also shows how to toggle wireframe mode and change the "
+           "color of the cube.");
+
+    igColorEdit3("Color", uniform_data.color, ImGuiColorEditFlags_Float);
+
+    bool reload_shader = false;
+    // Add a checkbox to toggle wireframe mode
+    if (igCheckbox("Wireframe Mode", &wireframe_mode)) {
+        reload_shader = true;
+    }
 
     igText("Time: %.2fs", uniform_data.time);
     igEnd();
@@ -225,6 +233,41 @@ static void frame(void) {
 
     // Update the mvp for the uniform buffer
     update_mvp();
+
+    // If we need to change any pipeline settings, we can edit them and rebuild
+    // the shader. Here we change the index buffer and primitive state based on
+    // the wireframe mode.
+    if (reload_shader) {
+        // Deactivate the shader before reloading it
+        nano_shader_deactivate(cube_shader);
+
+        // Reload the shader with the new index buffer
+        nano_shader_bind_index_buffer(cube_shader,
+                                      wireframe_mode ? wireframe_index_buffer_id
+                                                     : filled_index_buffer_id,
+                                      WGPUIndexFormat_Uint16);
+
+        // Set the primitive state to line list for wireframe mode
+        nano_shader_set_primitive_state(
+            cube_shader,
+            wireframe_mode
+                ? &(WGPUPrimitiveState){.topology =
+                                            WGPUPrimitiveTopology_LineStrip,
+                                        .stripIndexFormat =
+                                            WGPUIndexFormat_Uint16,
+                                        .frontFace = WGPUFrontFace_CCW,
+                                        .cullMode = WGPUCullMode_None}
+                : NULL);
+
+        // Set the vertex count for the shader based on the index buffer
+        nano_shader_set_vertex_count(
+            cube_shader, wireframe_mode
+                             ? sizeof(wireframe_indices) / sizeof(uint16_t)
+                             : sizeof(filled_indices) / sizeof(uint16_t));
+
+        // Rebuild the shader with the new index buffer
+        nano_shader_activate(cube_shader, true);
+    }
 }
 
 // Shutdown callback passed to nano_start_app()
@@ -270,7 +313,7 @@ int main(int argc, char *argv[]) {
     // This will initialize the WGPU instance with an MSAA TextureView
     // and create a swapchain for rendering.
     nano_start_app(&(nano_app_desc_t){
-        .title = "Nano Wave Demo",
+        .title = "Nano Cube Demo",
         .res_x = 1920,
         .res_y = 1080,
         .init_cb = init,

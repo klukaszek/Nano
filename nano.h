@@ -423,6 +423,10 @@ typedef struct {
 
     nano_pipeline_layout_t layout;
 
+    WGPUPrimitiveState *primitive_state;
+    WGPUFragmentState *fragment_state;
+    WGPUDepthStencilState *depth_stencil_state;
+
     // This is where we store buffer data and size so that Nano can
     // create the buffers for the shader bindings when the shader is loaded
     uint32_t buffers[NANO_MAX_GROUPS][NANO_GROUP_MAX_BINDINGS];
@@ -1444,7 +1448,8 @@ uint32_t nano_create_index_buffer(size_t size, size_t offset, void *data,
 }
 
 // Bind the index buffer to the shader so that we can render the vertices
-int nano_shader_bind_index_buffer(nano_shader_t *shader, uint32_t buffer_id, WGPUIndexFormat index_format) {
+int nano_shader_bind_index_buffer(nano_shader_t *shader, uint32_t buffer_id,
+                                  WGPUIndexFormat index_format) {
     if (shader == NULL) {
         LOG_ERR("NANO: nano_shader_bind_index_buffer() -> Shader is NULL\n");
         return NANO_FAIL;
@@ -2500,11 +2505,16 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                     .bufferCount = shader->vertex_buffer_count,
                     .buffers = &shader->vertex_buffers[0].vertex_buffer_layout,
                 },
-            .primitive = {.topology = WGPUPrimitiveTopology_TriangleList,
+            .primitive = shader->primitive_state != NULL 
+                              ? *shader->primitive_state 
+                              :
+                    (WGPUPrimitiveState){.topology = WGPUPrimitiveTopology_TriangleList,
                           .stripIndexFormat = WGPUIndexFormat_Undefined,
                           .frontFace = WGPUFrontFace_CCW,
                           .cullMode = WGPUCullMode_None},
-            .depthStencil =
+            .depthStencil = shader->depth_stencil_state != NULL
+                               ? shader->depth_stencil_state
+                               :
                 &(WGPUDepthStencilState){
                     .format = wgpu_get_depth_format(),
                     .depthWriteEnabled = true,
@@ -2532,7 +2542,9 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                     .mask = ~0u,
                     .alphaToCoverageEnabled = true,
                 },
-            .fragment =
+            .fragment = shader->fragment_state != NULL
+                            ? shader->fragment_state
+                            :
                 &(WGPUFragmentState){
                     .module = shader_module,
                     .entryPoint = info->entry_points[fragment_index].entry,
@@ -2938,6 +2950,71 @@ uint32_t nano_create_shader_from_file(const char *path, const char *label) {
     return shader_id;
 }
 
+// Set the primitive state for the shader in the event that we are not looking
+// to use the default triangle list topology
+// State can be NULL if we want to use the default state
+int nano_shader_set_primitive_state(nano_shader_t *shader,
+                                    WGPUPrimitiveState *state) {
+    if (shader == NULL) {
+        LOG_ERR("NANO: nano_shader_set_primitive_state() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    if (shader->in_use) {
+        LOG_ERR("NANO: Shader %u: nano_shader_set_primitive_state() -> Shader "
+                "is currently in use.\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    shader->primitive_state = state;
+
+    return NANO_OK;
+}
+
+// Set the depth stencil state for the shader in the event that we are not
+// looking to use the default depth stencil state.
+// State can be NULL if we want to use the default state
+int nano_shader_set_depth_stencil_state(nano_shader_t *shader,
+                                        WGPUDepthStencilState *state) {
+    if (shader == NULL) {
+        LOG_ERR("NANO: nano_shader_set_depth_stencil_state() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    if (shader->in_use) {
+        LOG_ERR("NANO: Shader %u: nano_shader_set_depth_stencil_state() -> "
+                "Shader is currently in use.\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    shader->depth_stencil_state = state;
+
+    return NANO_OK;
+}
+
+// Use a custom fragment state for the shader if the default fragment state
+// does not suffice
+// State can be NULL if we want to use the default state
+int nano_set_fragment_state(nano_shader_t *shader, WGPUFragmentState *state) {
+    if (shader == NULL) {
+        LOG_ERR("NANO: nano_set_fragment_state() -> Shader is NULL\n");
+        return NANO_FAIL;
+    }
+
+    if (shader->in_use) {
+        LOG_ERR("NANO: Shader %u: nano_set_fragment_state() -> Shader is "
+                "currently in use.\n",
+                shader->id);
+        return NANO_FAIL;
+    }
+
+    shader->fragment_state = state;
+
+    return NANO_OK;
+}
+
 // Set the number of elements expected to be processed by the compute shader
 // This is used to determine the number of workgroups to dispatch
 int nano_shader_set_num_elems(nano_shader_t *shader, size_t count) {
@@ -3324,7 +3401,8 @@ void nano_shader_execute(nano_shader_t *shader) {
                     return;
                 }
                 wgpuRenderPassEncoderSetIndexBuffer(
-                    render_pass, buffer->buffer, shader->index_format, buffer->offset, buffer->size);
+                    render_pass, buffer->buffer, shader->index_format,
+                    buffer->offset, buffer->size);
                 // Draw the indexed vertex buffer
                 wgpuRenderPassEncoderDrawIndexed(
                     render_pass, shader->vertex_count, 1, 0, 0, 0);
@@ -3422,7 +3500,7 @@ void nano_default_cleanup(void) {
             }
         }
     }
-    
+
     // Stop the WebGPU Runtime for either native or web
     wgpu_stop();
 }
