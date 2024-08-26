@@ -12,6 +12,10 @@
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui/cimgui.h"
 
+#ifdef NANO_CIMPLOT
+    #include "cimplot/cimplot.h"
+#endif
+
 // Replace ImGui macros with standard C equivalents
 #define IM_ASSERT(expr) assert(expr)
 #define IM_ALLOC(size) malloc(size)
@@ -195,6 +199,9 @@ typedef enum {
 typedef struct nano_cimgui_data {
 
     ImGuiContext *imguiContext;
+#ifdef NANO_CIMPLOT
+    ImPlotContext *implotContext;
+#endif
     WGPUDevice wgpuDevice;
     WGPUQueue defaultQueue;
     WGPUCommandEncoder cmdEncoder;
@@ -324,6 +331,14 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
         return NULL;
 
     bd->imguiContext = ctx;
+
+#ifdef NANO_CIMPLOT
+    ImPlotContext *implotContext = ImPlot_CreateContext();
+    if (implotContext == NULL)
+        return NULL;
+    bd->implotContext = implotContext;
+#endif
+
     memset(bd, 0, sizeof(nano_cimgui_data));
     memset(bd->LastKeyPressTime, 0, sizeof(bd->LastKeyPressTime));
     memset(bd->KeyDown, 0, sizeof(bd->KeyDown));
@@ -372,6 +387,10 @@ void nano_cimgui_shutdown(void) {
     bd->wgpuDevice = NULL;
     bd->numFramesInFlight = 0;
     bd->frameIndex = UINT32_MAX;
+    igDestroyContext(bd->imguiContext);
+    #ifdef NANO_CIMPLOT
+        ImPlot_DestroyContext(bd->implotContext);
+    #endif
 
     // Clear backend data
     io->BackendRendererName = NULL;

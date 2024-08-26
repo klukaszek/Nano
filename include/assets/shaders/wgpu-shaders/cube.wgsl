@@ -1,11 +1,10 @@
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 struct Uniforms {
     model_view_projection: mat4x4<f32>,
-    color: vec4<f32>,
     time: f32,
 };
 
@@ -13,7 +12,7 @@ struct Uniforms {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) color: vec4<f32>,
     @location(1) world_pos: vec3<f32>,
 };
 
@@ -28,5 +27,5 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return uniforms.color;
+    return input.color;
 }

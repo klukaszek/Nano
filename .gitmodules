@@ -4,3 +4,9 @@
 [submodule "include/cimgui"]
 	path = include/cimgui
 	url = https://github.com/cimgui/cimgui
+[submodule "cimplot"]
+	path = cimplot
+	url = https://github.com/cimgui/cimplot
+[submodule "include/cimplot"]
+	path = include/cimplot
+	url = https://github.com/cimgui/cimplot

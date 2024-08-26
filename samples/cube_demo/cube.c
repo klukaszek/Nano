@@ -36,21 +36,21 @@ char shader_code[8192];
 
 typedef struct {
     float position[3];
-    float color[3];
-} Vertex;
+    float color[4];
+} VertexData;
 
-Vertex cube_vertices[] = {
+VertexData cube_vertex_data[] = {
     // Front face
-    {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f}},
+    {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f, 1.0}},
+    {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 0.0f, 1.0}},
+    {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f, 1.0}},
+    {{-0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 0.0f, 1.0}},
     
     // Back face
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f}},
-    {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f}},
-    {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{-0.5f,  0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 1.0f, 1.0}},
+    {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 1.0f, 1.0}},
+    {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 1.0f, 1.0}},
+    {{-0.5f,  0.5f, -0.5f}, {0.5f, 0.5f, 0.5f, 1.0}}
 };
 
 uint16_t cube_indices[] = {
@@ -71,12 +71,12 @@ uint16_t cube_indices[] = {
 WGPUVertexAttribute attributes[2] = {
     {
         .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(Vertex, position),
+        .offset = offsetof(VertexData, position),
         .shaderLocation = 0
     },
     {
         .format = WGPUVertexFormat_Float32x3,
-        .offset = offsetof(Vertex, color),
+        .offset = offsetof(VertexData, color),
         .shaderLocation = 1
     }
 };
@@ -89,20 +89,23 @@ mat4 model, view, projection, mvp;
 // buffer in multiples of 16 bytes. See assets/shaders/dot.wgsl for an example.
 struct UniformBuffer {
     float mvp[16]; // 4x4 matrix (16 floats x 4 bytes = 64 bytes)
-    vec4 color; // 4 floats (16 bytes)
     float time; // 1 float (4 bytes)
     float padding[3]; // Padding to ensure 16-byte alignment
 } __attribute__((aligned((16)))) uniform_data; // 16 bytes
 
 void update_mvp() {
-    glm_mat4_identity(model);
-    glm_rotate(model, uniform_data.time, (vec3){0.5f, 1.0f, 0.0f});
-    glm_translate(model, (vec3){0.0f, 0.0f, -1.0f});
 
+    // Update the model matrix and have it rotate around the y axis
+    glm_mat4_identity(model);
+    glm_rotate(model, uniform_data.time, (vec3){0.0f, 1.0f, 0.0f});
+    glm_translate(model, (vec3){0.0f, 0.0f, -1.0f});
+    
+    // Update the view matrix
     glm_mat4_identity(view);
     glm_lookat((vec3){0.0f, 0.0f, 3.0f}, (vec3){0.0f, 0.0f, 0.0f},
                (vec3){0.0f, 1.0f, 0.0f}, view);
-
+    
+    // Update the projection matrix with a 90 degree field of view
     glm_mat4_identity(projection);
     glm_perspective(glm_rad(90.0f),
                     (float)nano_app.wgpu->width / (float)nano_app.wgpu->height,
@@ -125,18 +128,15 @@ static void init(void) {
     WGPUSupportedLimits limits;
     wgpuDeviceGetLimits(nano_app.wgpu->device, &limits);
 
-    LOG("DEMO: Max Vertex Buffers: %u\n", limits.limits.maxVertexBuffers);
-    LOG("DEMO: Max Vertex Attributes: %u\n", limits.limits.maxVertexAttributes);
+    LOG("DEMO: Max VertexData Buffers: %u\n", limits.limits.maxVertexBuffers);
+    LOG("DEMO: Max VertexData Attributes: %u\n", limits.limits.maxVertexAttributes);
 
-    // Fragment and Vertex shader creation
+    // Fragment and VertexData shader creation
     char cube_shader_name[] = "cube.wgsl";
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH, cube_shader_name);
 
     // Assign values to the uniform buffer
     uniform_data.time = 0.0f;
-
-    // Set the color to white
-    glm_vec4_one(uniform_data.color);
 
     // Initialize the model, view, and projection matrices
     update_mvp();
@@ -144,21 +144,25 @@ static void init(void) {
     uint32_t shader_id =
         nano_create_shader_from_file(shader_path, cube_shader_name);
     cube_shader = nano_get_shader(shader_id);
-
+    
+    // Create a vertex buffer for the cube
     uint32_t vertex_buffer_id = nano_create_vertex_buffer(
-        sizeof(cube_vertices), 0, &cube_vertices, NULL);
+        sizeof(cube_vertex_data), 0, &cube_vertex_data, NULL);
 
     // Assign the vertex buffer to the shader
     nano_shader_bind_vertex_buffer(cube_shader, vertex_buffer_id,
                                    (WGPUVertexAttribute *)&attributes, 2,
-                                   sizeof(Vertex));
-
+                                   sizeof(VertexData));
+    
+    // Create an index buffer for the cube
     uint32_t index_buffer_id =
         nano_create_index_buffer(sizeof(cube_indices), 0, &cube_indices, NULL);
 
+    // Assign the index buffer to the shader
     nano_shader_bind_index_buffer(cube_shader, index_buffer_id,
                                   WGPUIndexFormat_Uint16);
-
+    
+    // Get the binding info for the uniforms at (0, 0)
     nano_binding_info_t *binding = nano_shader_get_binding(cube_shader, 0, 0);
     if (!binding) {
         LOG("Failed to get binding\n");
@@ -211,15 +215,15 @@ static void frame(void) {
     igText("This demo shows how to make a simple cube using Nano.");
 
     igText("Time: %.2fs", uniform_data.time);
-    igSliderFloat4("Color", uniform_data.color, 0.0f, 1.0f, "%.2f", 1.0f);
-
     igEnd();
 
     // Change Nano app state at end of frame
     nano_end_frame();
 
-    // Update the uniform buffer
+    // Update the uniform time field
     uniform_data.time += nano_app.frametime / 1000.0f;
+
+    // Update the mvp for the uniform buffer
     update_mvp();
 }
 

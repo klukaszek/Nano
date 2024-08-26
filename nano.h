@@ -2530,7 +2530,7 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                 (WGPUMultisampleState){
                     .count = nano_app.settings.gfx.msaa.sample_count,
                     .mask = ~0u,
-                    .alphaToCoverageEnabled = false,
+                    .alphaToCoverageEnabled = true,
                 },
             .fragment =
                 &(WGPUFragmentState){
@@ -2546,13 +2546,13 @@ int nano_build_shader_pipelines(nano_shader_t *shader) {
                                         (WGPUBlendComponent){
                                             .operation = WGPUBlendOperation_Add,
                                             .srcFactor = WGPUBlendFactor_One,
-                                            .dstFactor = WGPUBlendFactor_Zero,
+                                            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
                                         },
                                     .alpha =
                                         (WGPUBlendComponent){
                                             .operation = WGPUBlendOperation_Add,
                                             .srcFactor = WGPUBlendFactor_One,
-                                            .dstFactor = WGPUBlendFactor_Zero,
+                                            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
                                         },
                                 },
                             .writeMask = WGPUColorWriteMask_All,
@@ -3281,10 +3281,10 @@ void nano_shader_execute(nano_shader_t *shader) {
                 .depthStencilAttachment =
                     &(WGPURenderPassDepthStencilAttachment){
                         .view = wgpu_get_depth_stencil_view(),
-                        .depthLoadOp = WGPULoadOp_Clear,
+                        .depthLoadOp = WGPULoadOp_Load,
                         .depthStoreOp = WGPUStoreOp_Store,
                         .depthClearValue = 1.0f,
-                        .stencilLoadOp = WGPULoadOp_Clear,
+                        .stencilLoadOp = WGPULoadOp_Load,
                         .stencilStoreOp = WGPUStoreOp_Store,
                         .stencilClearValue = 0,
                     }};
@@ -3422,7 +3422,8 @@ void nano_default_cleanup(void) {
             }
         }
     }
-
+    
+    // Stop the WebGPU Runtime for either native or web
     wgpu_stop();
 }
 
