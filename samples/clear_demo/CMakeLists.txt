@@ -1,22 +1,29 @@
 cmake_minimum_required(VERSION 3.5)
 project(Nano)
 
-set(CMAKE_EXECUTABLE_SUFFIX ".html")
-
-# Copy the assets to the build directory
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASSERTIONS --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=40mb -s STACK_SIZE=16mb")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -O3")
-
-include_directories(${CMAKE_SOURCE_DIR})
-include_directories(${CMAKE_SOURCE_DIR}/include)
+# Include the necessary directories
+include_directories(
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/include/
+            ${CMAKE_SOURCE_DIR}/include/assets/fonts/
+            /usr/local/include/
+            )
 
 set(FILES clear_demo.c)
 
 # Add the clear_demo executable 
 add_executable(clear_demo ${FILES})
-target_link_libraries(clear_demo cimgui)
+
+if(NANO_WEB)
+
+set(CMAKE_EXECUTABLE_SUFFIX ".html")
+
+# Copy the assets to the build directory
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASSERTIONS --preload-file ${CMAKE_SOURCE_DIR}/include/assets/shaders@/")
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s INITIAL_MEMORY=50mb -s STACK_SIZE=32mb")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_WEBGPU=1 -O3")
+set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 # Compiler and linker flags for Emscripten
 set_target_properties(clear_demo PROPERTIES
@@ -28,3 +35,27 @@ set_target_properties(clear_demo PROPERTIES
 set_property(DIRECTORY PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
     "clear_demo.js;clear_demo.wasm;clear_demo.html;clear_demo.data;"
 )
+
+target_link_libraries(clear_demo cimgui)
+
+else()
+    target_compile_definitions(clear_demo PRIVATE NANO_NATIVE=1)
+    if (WIN32)
+        add_definitions(-DGLFW_EXPOSE_NATIVE_WIN32)
+        set(OS_LIBRARIES d3dcompiler ws2_32 userenv bcrypt ntdll opengl32)
+    elseif(UNIX AND NOT APPLE)
+        add_definitions(-DGLFW_EXPOSE_NATIVE_X11)
+        add_definitions(-DGLFW_EXPOSE_NATIVE_WAYLAND)
+        set(OS_LIBRARIES "-lm -ldl -lpthread")
+    elseif(APPLE)
+        add_definitions(-DGLFW_EXPOSE_NATIVE_COCOA)
+        set(OS_LIBRARIES "-framework CoreFoundation -framework QuartzCore -framework Metal")
+    endif()
+    add_definitions(-DNANO_CIMGUI_DEBUG)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
+    # Specify the nessary libraries for the desktop version
+    target_link_libraries(clear_demo 
+        cimgui cglm wgpu_native glfw ${GLFW3WGPU} ${OS_LIBRARIES}
+    )
+endif()
+

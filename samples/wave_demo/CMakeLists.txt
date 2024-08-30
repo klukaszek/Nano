@@ -12,7 +12,7 @@ set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 include_directories(
             ${CMAKE_SOURCE_DIR}
-            ${CMAKE_SOURCE_DIR}/include/
+            ${INCLUDE_DIR}
             )
 
 set(FILES wave.c)

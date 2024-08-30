@@ -147,11 +147,11 @@ typedef struct {
     wgpu_desc_t desc;
     float width;
     float height;
+    float clear_color[4];
     WGPUInstance instance;
     WGPUAdapter adapter;
     WGPUDevice device;
     WGPUSurface surface;
-    float clear_color[4];
     WGPUCommandEncoder cmd_encoder;
     WGPUSwapChain swapchain;
     WGPUTextureFormat render_format;
@@ -174,11 +174,6 @@ typedef struct {
     nano_cimgui_data *imgui_data;
 #endif
 } wgpu_state_t;
-
-typedef struct wgpu_swapchain_info_t {
-    WGPUTextureView render_view;
-    WGPUTextureView resolve_view;
-} wgpu_swapchain_info_t;
 
 static wgpu_state_t state;
 
@@ -272,11 +267,6 @@ static WGPUTextureFormat wgpu_get_color_format(void) {
 
 static WGPUTextureFormat wgpu_get_depth_format(void) {
     return WGPUTextureFormat_Depth32FloatStencil8;
-}
-
-// Expose a function to toggle fullscreen so we can use any key to toggle
-static bool wgpu_toggle_fullscreen(char *id) {
-    return emsc_fullscreen(id) == EMSCRIPTEN_RESULT_SUCCESS;
 }
 
 // Emscripten specific code
@@ -658,7 +648,7 @@ static void request_device_cb(WGPURequestDeviceStatus status, WGPUDevice device,
     state->imgui_data = nano_cimgui_init(
         state->device, 2, wgpu_get_color_format(), WGPUTextureFormat_Undefined,
         state->desc.res_x, state->desc.res_y, state->width, state->height,
-        state->desc.sample_count, NULL);
+        state->desc.sample_count, NULL, NULL);
     if (!state->imgui_data) {
         WGPU_LOG("WGPU Backend: nano_cimgui_init() failed.\n");
         state->async_setup_failed = true;
@@ -821,12 +811,10 @@ void wgpu_swapchain_init(wgpu_state_t *state) {
 }
 
 void wgpu_swapchain_discard(wgpu_state_t *state) {
-
 // Release any ImGui resources that depend on the swapchain
 #ifdef NANO_CIMGUI
     nano_cimgui_invalidate_device_objects();
 #endif
-
     if (state->msaa_view) {
         wgpuTextureViewRelease(state->msaa_view);
         state->msaa_view = 0;
@@ -842,6 +830,10 @@ void wgpu_swapchain_discard(wgpu_state_t *state) {
     if (state->depth_stencil_tex) {
         wgpuTextureRelease(state->depth_stencil_tex);
         state->depth_stencil_tex = 0;
+    }
+    if (state->swapchain_view) {
+        wgpuTextureViewRelease(state->swapchain_view);
+        state->swapchain_view = 0;
     }
     if (state->swapchain) {
         wgpuSwapChainRelease(state->swapchain);

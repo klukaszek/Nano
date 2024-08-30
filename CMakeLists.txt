@@ -1,7 +1,17 @@
 cmake_minimum_required(VERSION 3.5)
 project(Nano)
 
-set(CMAKE_EXECUTABLE_SUFFIX ".html")
+if (EMSCRIPTEN)
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+    set(NANO_WEB 1)
+else()
+    set(NANO_NATIVE 1)
+    set(CMAKE_EXECUTABLE_SUFFIX "")
+    message("Building for native platform")
+endif()
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Include directories
 include_directories(
@@ -9,6 +19,9 @@ include_directories(
     include/cimgui 
     include/cglm
     include/cglm/include
+    include/glfw/include
+    include/wgpu_native
+    include/glfw3wgpu
     include/assets/fonts
     ${EMSCRIPTEN_ROOT_PATH}/cache/sysroot/include/webgpu
 )
@@ -18,10 +31,25 @@ include_directories(
 add_subdirectory(include)
 
 # Find the shared cimgui library
-find_library(CIMGUI_LIBRARY NAMES cimgui PATHS ${CMAKE_SOURCE_DIR}/include/cimgui/)
+find_library(CIMGUI_LIBRARY NAMES cimgui HINTS ${CMAKE_SOURCE_DIR}/include/cimgui/)
 
 # Find the cglm library
-find_library(CGLM_LIBRARY NAMES cglm PATHS ${CMAKE_SOURCE_DIR}/include/cglm/)
+find_library(CGLM_LIBRARY NAMES cglm HINTS ${CMAKE_SOURCE_DIR}/include/cglm/)
+
+if (NANO_NATIVE)
+
+    # Find the native WGPU library if we are building for the native platform
+    find_library(WGPU_LIBRARY NAMES wgpu_native PATHS ${CMAKE_SOURCE_DIR}/include/wgpu_native/)
+    
+    # Find the GLFW3 library
+    find_library(GLFW3_LIBRARY NAMES glfw HINTS ${CMAKE_SOURCE_DIR}/include/glfw/src/)
+
+    find_library(GLFW3WGPU NAMES glfw3webgpu HINTS ${CMAKE_SOURCE_DIR}/include/glfw3wgpu/)
+
+    message("WGPU_LIBRARY: ${WGPU_LIBRARY}")
+    message("GLFW3_LIBRARY: ${GLFW3_LIBRARY}")
+    message("GLFW3WGPU: ${GLFW3WGPU}")
+endif()
 
 # Build the samples
 add_subdirectory(samples)

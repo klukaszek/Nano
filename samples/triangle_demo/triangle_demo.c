@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -5,7 +6,13 @@
 #include "JetBrainsMonoNerdFontMono-Bold.h"
 #include "LilexNerdFontMono-Medium.h"
 #include "Roboto-Regular.h"
-#include <webgpu/webgpu.h>
+#include "cglm/cglm.h"
+
+#ifdef NANO_NATIVE
+    #include <wgpu_native/webgpu.h>
+#else
+    #include <webgpu/webgpu.h>
+#endif
 
 // Toggles stdout logging and enables the nano debug imgui overlay
 #define NANO_DEBUG
@@ -17,9 +24,6 @@
 
 // #define NANO_CIMGUI_DEBUG
 #include "nano.h"
-
-// Include the cimgui header file so we can use imgui with nano
-#include "cimgui/cimgui.h"
 
 // Custom data example for loading into the compute shader
 typedef struct {
@@ -86,10 +90,8 @@ static void init(void) {
     snprintf(shader_path, sizeof(shader_path), SHADER_PATH,
              triangle_shader_name);
 
-    nano_create_shader_from_file(shader_path, triangle_shader_name);
-
     uint32_t triangle_shader_id =
-        nano_create_shader_from_file(shader_path, (char *)triangle_shader_name);
+        nano_create_shader_from_file(triangle_shader_name, (char *)triangle_shader_name);
     if (triangle_shader_id == NANO_FAIL) {
         LOG("DEMO: Failed to create shader\n");
         return;

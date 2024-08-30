@@ -2,19 +2,26 @@
 
 #define NANO_CIMGUI_IMPL
 #include <assert.h>
-#include <emscripten/emscripten.h>
-#include <emscripten/html5.h>
+
+#ifndef NANO_NATIVE
+    #include <emscripten/emscripten.h>
+    #include <emscripten/html5.h>
+    #include <webgpu/webgpu.h>
+#else
+    #include <GLFW/glfw3.h>
+    #include <GLFW/glfw3native.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <webgpu/webgpu.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui/cimgui.h"
 
-#ifdef NANO_CIMPLOT
-    #include "cimplot/cimplot.h"
-#endif
+/*#ifdef NANO_CIMPLOT*/
+/*    #include "cimplot/cimplot.h"*/
+/*#endif*/
 
 // Replace ImGui macros with standard C equivalents
 #define IM_ASSERT(expr) assert(expr)
@@ -22,7 +29,7 @@
 #define IM_FREE(ptr) free(ptr)
 
 #ifdef NANO_CIMGUI_DEBUG
-    #define ILOG(...) printf(__VA_ARGS__);
+    #define ILOG(...) printf("[NANO ImGui]: "); printf(__VA_ARGS__);
 #else
     #define ILOG(...)
 #endif
@@ -199,8 +206,11 @@ typedef enum {
 typedef struct nano_cimgui_data {
 
     ImGuiContext *imguiContext;
-#ifdef NANO_CIMPLOT
-    ImPlotContext *implotContext;
+/*#ifdef NANO_CIMPLOT*/
+/*    ImPlotContext *implotContext;*/
+/*#endif*/
+#ifdef NANO_NATIVE
+    GLFWwindow *glfwWindow;
 #endif
     WGPUDevice wgpuDevice;
     WGPUQueue defaultQueue;
@@ -240,7 +250,7 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
                                    WGPUTextureFormat depth_stencil_format,
                                    float res_X, float res_Y, float width,
                                    float height, uint32_t multiSampleCount,
-                                   ImGuiContext *ctx);
+                                   ImGuiContext *ctx, void *glfw_ctx);
 void nano_cimgui_shutdown(void);
 void nano_cimgui_new_frame(void);
 void nano_cimgui_set_encoder(WGPUCommandEncoder encoder);
@@ -291,14 +301,17 @@ WGPUShaderModule nano_cimgui_create_shader_module(WGPUDevice device,
     return wgpuDeviceCreateShaderModule(device, &desc);
 }
 
-// Initialize the WGPU backend for ImGui
+/*
+ * Initialize the WGPU backend for ImGui
+ * GLFW context should be NULL if you are using the Emscripten backend
+ */
 nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
                                    WGPUTextureFormat render_target_format,
                                    WGPUTextureFormat depth_stencil_format,
                                    float res_x, float res_y, float width,
                                    float height, uint32_t multiSampleCount,
-                                   ImGuiContext *ctx) {
-
+                                   ImGuiContext *ctx, void *glfw_ctx) {
+    ILOG("Initializing nano_cimgui\n");
     if (ctx == NULL) {
         ctx = igCreateContext(NULL);
         if (ctx == NULL)
@@ -307,6 +320,14 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
     } else {
         igSetCurrentContext(ctx);
     }
+    ILOG("ImGui Context: %p\n", ctx);
+
+#ifdef NANO_NATIVE
+    if (glfw_ctx == NULL) {
+        ILOG("GLFW Context is NULL\n");
+        return NULL;
+    }
+#endif
 
     // Get the ImGui IO
     ImGuiIO *io = igGetIO();
@@ -314,15 +335,16 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
     // Set initial display size
     io->DisplaySize = (ImVec2){width, height};
     IM_ASSERT(io->BackendRendererUserData == NULL &&
-              "Already initialized a renderer backend!");
+              "Already initialized an ImGui backend!");
 
     // Set up key mapping and backend flags
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io->BackendFlags |= ImGuiBackendFlags_HasSetMousePos;
     io->BackendFlags |= ImGuiBackendFlags_HasMouseCursors;
+    io->BackendPlatformName = "cimgui_impl_wgpu";
 
-    io->BackendPlatformName = "cimgui_impl_webgpu";
+    ILOG("Malloc'ing imgui backend data\n");
 
     // Allocate and initialize backend data
     nano_cimgui_data *bd =
@@ -332,14 +354,20 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
 
     bd->imguiContext = ctx;
 
-#ifdef NANO_CIMPLOT
-    ImPlotContext *implotContext = ImPlot_CreateContext();
-    if (implotContext == NULL)
-        return NULL;
-    bd->implotContext = implotContext;
+// Assign GLFW window to backend data if using native backend
+#ifdef NANO_NATIVE
+    bd->glfwWindow = glfw_ctx;
 #endif
 
-    memset(bd, 0, sizeof(nano_cimgui_data));
+    /*// Initialize ImPlot context if enabled*/
+    /*#ifdef NANO_CIMPLOT*/
+    /*    ImPlotContext *implotContext = ImPlot_CreateContext();*/
+    /*    if (implotContext == NULL)*/
+    /*        return NULL;*/
+    /*    bd->implotContext = implotContext;*/
+    /*#endif*/
+
+    /*memset(bd, 0, sizeof(nano_cimgui_data));*/
     memset(bd->LastKeyPressTime, 0, sizeof(bd->LastKeyPressTime));
     memset(bd->KeyDown, 0, sizeof(bd->KeyDown));
     bd->KeyRepeatDelay = 0.5; // Delay before key repeat starts
@@ -352,6 +380,7 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
 
     // Initialize WGPU-specific data
     bd->wgpuDevice = device;
+    ILOG("WGPU Device: %p\n", bd->wgpuDevice);
     bd->defaultQueue = wgpuDeviceGetQueue(bd->wgpuDevice);
     bd->renderTargetFormat = render_target_format;
     bd->depthStencilFormat = depth_stencil_format;
@@ -364,11 +393,14 @@ nano_cimgui_data *nano_cimgui_init(WGPUDevice device, int num_frames_in_flight,
     bd->VertexBufferSize = 5000;
     bd->IndexBufferSize = 10000;
 
+    ILOG("Scaling GUI to canvas\n");
+
     // Set up ImGui style scaling
     nano_cimgui_scale_to_canvas(res_x, res_y, width, height);
 
     cimgui_ready = true;
 
+    ILOG("nano_cimgui initialized\n");
     return bd;
 }
 
@@ -388,9 +420,9 @@ void nano_cimgui_shutdown(void) {
     bd->numFramesInFlight = 0;
     bd->frameIndex = UINT32_MAX;
     igDestroyContext(bd->imguiContext);
-    #ifdef NANO_CIMPLOT
-        ImPlot_DestroyContext(bd->implotContext);
-    #endif
+    /*#ifdef NANO_CIMPLOT*/
+    /*    ImPlot_DestroyContext(bd->implotContext);*/
+    /*#endif*/
 
     // Clear backend data
     io->BackendRendererName = NULL;
@@ -408,11 +440,21 @@ void nano_cimgui_new_frame(void) {
 
     // Update display size for window resizing
     int width, height;
+#ifdef NANO_NATIVE
+    GLFWwindow *window = bd->glfwWindow;
+    glfwGetFramebufferSize(window, &width, &height);
+#else
     emscripten_get_canvas_element_size("#canvas", &width, &height);
+#endif
     io->DisplaySize = (ImVec2){(float)width, (float)height};
 
     // Update time step (targeting 144 FPS MAX for ImGui)
-    double current_time = emscripten_get_now() / 1000.0;
+    double current_time;
+#ifdef NANO_NATIVE
+    current_time = glfwGetTime();
+#else
+    current_time = emscripten_get_now() / 1000.0;
+#endif
     io->DeltaTime = bd->deltaTime ? (float)(current_time - bd->deltaTime)
                                   : (float)(1.0f / 144.0f);
     bd->deltaTime = current_time;
@@ -845,7 +887,7 @@ bool nano_cimgui_create_font_textures() {
     bd->Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &uniform_buffer_desc);
 
     if (!bd->PipelineState)
-        printf("Pipeline state is null\n");
+        ILOG("Pipeline state is null\n");
 
     // Create bind group
     WGPUBindGroupEntry entries[3] = {
@@ -929,7 +971,13 @@ void nano_cimgui_process_key_event(int key, bool down) {
         return;
 
     // Get current time so we can check for key repeat
-    double current_time = emscripten_get_now() / 1000.0;
+    double current_time;
+
+#ifdef NANO_NATIVE
+    current_time = glfwGetTime();
+#else
+    current_time = emscripten_get_now() / 1000.0;
+#endif
 
     // Update key state
     if (down) {
@@ -991,11 +1039,15 @@ void nano_cimgui_scale_to_canvas(float res_x, float res_y, float width,
     // This should be changed to the target resolution if we can get it
     float scale = (scale_x < scale_y) ? scale_x : scale_y;
     scale = (scale < 1.0f) ? 1.0f : scale;
+    
+    ImGuiStyle *style = igGetStyle();
+    ILOG("Got style\n");
 
     // Destroy and recreate the style to preserve the scale
-    ImGuiStyle_destroy(igGetStyle());
-    ImGuiStyle *new_style = ImGuiStyle_ImGuiStyle();
-    ImGuiStyle_ScaleAllSizes(new_style, scale);
+    if (style != NULL) {
+        ImGuiStyle_ScaleAllSizes(style, scale);
+        ILOG("Scaled style\n");
+    }
 }
 
 ImGuiKey nano_cimgui_wgpukey_to_imguikey(int keycode) {

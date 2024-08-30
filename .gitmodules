@@ -4,9 +4,16 @@
 [submodule "include/cimgui"]
 	path = include/cimgui
 	url = https://github.com/cimgui/cimgui
-[submodule "cimplot"]
-	path = cimplot
-	url = https://github.com/cimgui/cimplot
 [submodule "include/cimplot"]
 	path = include/cimplot
 	url = https://github.com/cimgui/cimplot
+[submodule "include/glfw3webgpu"]
+	path = include/glfw3webgpu
+	url = https://github.com/eliemichel/glfw3webgpu
+[submodule "include/glfw"]
+	path = include/glfw
+    url = https://github.com/glfw/glfw
+[submodule "include/dawn"]
+	path = dawn
+	url = https://dawn.googlesource.com/dawn
+	shallow = true
