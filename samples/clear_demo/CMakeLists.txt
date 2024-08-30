@@ -6,7 +6,6 @@ include_directories(
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/include/
             ${CMAKE_SOURCE_DIR}/include/assets/fonts/
-            /usr/local/include/
             )
 
 set(FILES clear_demo.c)
@@ -55,7 +54,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
     # Specify the nessary libraries for the desktop version
     target_link_libraries(clear_demo 
-        cimgui cglm wgpu_native glfw ${GLFW3WGPU} ${OS_LIBRARIES}
+        cimgui cglm dawn::webgpu_dawn webgpu_glfw ${OS_LIBRARIES}
     )
 endif()
 

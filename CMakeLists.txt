@@ -20,6 +20,7 @@ include_directories(
     include/cglm
     include/cglm/include
     include/glfw/include
+    include/dawn
     include/wgpu_native
     include/glfw3wgpu
     include/assets/fonts
@@ -44,7 +45,7 @@ if (NANO_NATIVE)
     # Find the GLFW3 library
     find_library(GLFW3_LIBRARY NAMES glfw HINTS ${CMAKE_SOURCE_DIR}/include/glfw/src/)
 
-    find_library(GLFW3WGPU NAMES glfw3webgpu HINTS ${CMAKE_SOURCE_DIR}/include/glfw3wgpu/)
+    # find_library(GLFW3WGPU NAMES glfw3webgpu HINTS ${CMAKE_SOURCE_DIR}/include/glfw3webgpu/)
 
     message("WGPU_LIBRARY: ${WGPU_LIBRARY}")
     message("GLFW3_LIBRARY: ${GLFW3_LIBRARY}")
