@@ -870,6 +870,7 @@ bool nano_cimgui_create_font_textures() {
         .magFilter = WGPUFilterMode_Linear,
         .minFilter = WGPUFilterMode_Linear,
         .mipmapFilter = WGPUMipmapFilterMode_Linear,
+        .maxAnisotropy = 1,
     };
     if (bd->Sampler)
         wgpuSamplerRelease(bd->Sampler);

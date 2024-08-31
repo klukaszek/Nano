@@ -164,13 +164,12 @@ typedef struct {
     WGPUDevice device;
     WGPUSurface surface;
     WGPUSurfaceTexture surface_texture;
+    WGPUTextureView surface_view;
     WGPUSurfaceCapabilities surface_capabilities;
     WGPUCommandEncoder cmd_encoder;
     WGPUTextureFormat render_format;
     WGPUTexture depth_stencil_tex;
     WGPUTextureView depth_stencil_view;
-    WGPUTexture render_tex;
-    WGPUTextureView render_view;
     WGPUTexture msaa_tex;
     WGPUTextureView msaa_view;
     wgpu_key_func key_down_cb;
@@ -265,18 +264,12 @@ static WGPUTextureView wgpu_get_render_view(void) {
         assert(state.msaa_view);
         return state.msaa_view;
     } else {
-        // TODO: MAKE SURE TO USE SURFACE TEXTURE HERE
-        // WE HAVE TO SET THE SURACE TEXTURE TO A WGPUTEXTURE
-        // AND THEN USE THAT TO CREATE THE VIEW
-        wgpuSurfaceGetCurrentTexture(state.surface, &state.surface_texture);
-        return wgpuTextureCreateView(state.surface_texture.texture, &(WGPUTextureViewDescriptor){
-            .format = state.render_format,
-            .dimension = WGPUTextureViewDimension_2D,
-            .baseMipLevel = 0,
-            .mipLevelCount = 1,
-            .baseArrayLayer = 0,
-            .arrayLayerCount = 1,
-        });
+        /*// TODO: MAKE SURE TO USE SURFACE TEXTURE HERE*/
+        /*// WE HAVE TO SET THE SURACE TEXTURE TO A WGPUTEXTURE*/
+        /*// AND THEN USE THAT TO CREATE THE VIEW*/
+        /*wgpuSurfaceGetCurrentTexture(state.surface, &state.surface_texture);*/
+        assert(state.surface_view);
+        return state.surface_view;
     }
 }
 
@@ -501,6 +494,7 @@ void wgpu_platform_start(wgpu_state_t *state) {
     WGPU_LOG("WGPU Backend: GLFW initialized successfully\n");
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     state->window = glfwCreateWindow(state->width, state->height,
                                      state->desc.title, NULL, NULL);
     GLFWwindow *window = state->window;
@@ -532,13 +526,15 @@ void wgpu_platform_start(wgpu_state_t *state) {
 
     WGPU_LOG("WGPU Backend: Creating wgpu surface\n");
 
-    /*// Get the surface from the window*/
     state->surface = glfwGetWGPUSurface(state->instance, window);
     assert(state->surface);
 
     // Get the adapter
     WGPURequestAdapterOptions options = {
         .compatibleSurface = state->surface,
+        .backendType = WGPUBackendType_Vulkan,
+        .powerPreference = WGPUPowerPreference_HighPerformance,
+        .forceFallbackAdapter = false,
     };
 
     wgpuInstanceRequestAdapter(state->instance, &options, request_adapter_cb,
@@ -569,27 +565,20 @@ void wgpu_surface_configure(wgpu_state_t *state) {
     assert(0 == state->depth_stencil_view);
     assert(0 == state->msaa_tex);
     assert(0 == state->msaa_view);
-    assert(0 == state->render_tex);
-    assert(0 == state->render_view);
 
     WGPU_LOG("WGPU Backend: Creating surface with dimensions: %dx%d\n",
              (int)state->width, (int)state->height);
 
-    state->surface = glfwGetWGPUSurface(state->instance, state->window);
-    assert(state->surface);
-
     WGPUSurfaceCapabilities capabilities;
     wgpuSurfaceGetCapabilities(state->surface, state->adapter, &capabilities);
-    
+
     /*WGPU_LOG("WGPU Backend: Surface capabilities:\n");*/
     /*WGPU_LOG("WGPU Backend:   - Present modes: %s", capabilities);*/
 
     WGPUSurfaceConfiguration config = {
         .device = state->device,
-        .format = state->render_format,
+        .format = WGPUTextureFormat_BGRA8UnormSrgb,
         .usage = WGPUTextureUsage_RenderAttachment,
-        .viewFormatCount = 1,
-        .viewFormats = &state->render_format,
         .alphaMode = WGPUCompositeAlphaMode_Auto,
         .width = (uint32_t)state->width,
         .height = (uint32_t)state->height,
@@ -601,6 +590,25 @@ void wgpu_surface_configure(wgpu_state_t *state) {
     }
 
     wgpuSurfaceConfigure(state->surface, &config);
+    
+    wgpuSurfaceGetCurrentTexture(state->surface, &state->surface_texture);
+    if (state->surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
+        WGPU_LOG("WGPU Backend: Surface texture creation failed\n");
+        return;
+    }
+
+    state->surface_view = wgpuTextureCreateView(
+            state->surface_texture.texture,
+            &(WGPUTextureViewDescriptor){
+                .format = wgpuTextureGetFormat(state->surface_texture.texture),
+                .dimension = WGPUTextureViewDimension_2D,
+                .baseMipLevel = 0,
+                .mipLevelCount = 1,
+                .baseArrayLayer = 0,
+                .arrayLayerCount = 1,
+            });
+
+    assert(state->surface_view);
 
     WGPU_LOG("WGPU Backend: Surface created successfully.\n");
 
@@ -648,8 +656,10 @@ void wgpu_surface_configure(wgpu_state_t *state) {
                 .mipLevelCount = 1,
                 .sampleCount = (uint32_t)state->desc.sample_count,
             });
+        
         assert(state->msaa_tex);
         state->msaa_view = wgpuTextureCreateView(state->msaa_tex, NULL);
+        
         assert(state->msaa_view);
         WGPU_LOG("WGPU Backend: MSAA texture created successfully.\n");
     }
@@ -681,13 +691,9 @@ void wgpu_surface_discard(wgpu_state_t *state) {
         wgpuTextureRelease(state->surface_texture.texture);
         state->surface_texture.texture = 0;
     }
-    if (state->render_tex) {
-        wgpuTextureRelease(state->render_tex);
-        state->render_tex = 0;
-    }
-    if (state->render_view) {
-        wgpuTextureViewRelease(state->render_view);
-        state->render_view = 0;
+    if (state->surface_view) {
+        wgpuTextureViewRelease(state->surface_view);
+        state->surface_view = 0;
     }
 }
 

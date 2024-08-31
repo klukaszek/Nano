@@ -5,13 +5,12 @@
 #include "JetBrainsMonoNerdFontMono-Bold.h"
 #include "LilexNerdFontMono-Medium.h"
 #include "Roboto-Regular.h"
-#include "cglm/cglm.h"
 
 #include <webgpu/webgpu.h>
 
 // Toggles stdout logging and enables the nano debug imgui overlay
 #define NANO_DEBUG
-#define NANO_CIMGUI
+/*#define NANO_CIMGUI*/
 #define WGPU_BACKEND_DEBUG
 
 // Number of custom fonts to load before starting the application
@@ -276,7 +275,7 @@ int main(int argc, char *argv[]) {
         .init_cb = init,
         .frame_cb = frame,
         .shutdown_cb = shutdown,
-        .sample_count = 0,
+        .sample_count = 1,
     });
     return 0;
 }

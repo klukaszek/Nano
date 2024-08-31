@@ -97,8 +97,6 @@
     #include "nano_native.h"
 #endif
 
-#define NANO_CIMGUI
-
 // Include CImGui for Nano
 // Assumes that nano_cimgui.h & cimgui.h are in the include path
 // and cimgui should be available as a static or shared library
