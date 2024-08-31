@@ -1,8 +1,11 @@
 if (NANO_NATIVE)
     message(STATUS "Building for native platform")
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS STATIC CACHE BOOL "" FORCE)
+    add_subdirectory(glfw)
     add_subdirectory(glfw3webgpu)
-    # set(DAWN_FETCH_DEPENDENCIES ON)
-    # add_subdirectory("dawn" EXCLUDE_FROM_ALL)
 endif()
 
 add_subdirectory(cglm)

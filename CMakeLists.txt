@@ -20,11 +20,10 @@ include_directories(
     include/cglm
     include/cglm/include
     include/glfw/include
-    include/dawn
-    include/wgpu_native
-    include/glfw3wgpu
+    include/webgpu
+    include/glfw3webgpu
     include/assets/fonts
-    ${EMSCRIPTEN_ROOT_PATH}/cache/sysroot/include/webgpu
+    # ${EMSCRIPTEN_ROOT_PATH}/cache/sysroot/include/webgpu
 )
 
 # Add the include directory so that any dependencies can be compiled
@@ -40,12 +39,12 @@ find_library(CGLM_LIBRARY NAMES cglm HINTS ${CMAKE_SOURCE_DIR}/include/cglm/)
 if (NANO_NATIVE)
 
     # Find the native WGPU library if we are building for the native platform
-    find_library(WGPU_LIBRARY NAMES wgpu_native PATHS ${CMAKE_SOURCE_DIR}/include/wgpu_native/)
+    find_library(WGPU_LIBRARY NAMES wgpu_native PATHS ${CMAKE_SOURCE_DIR}/include/webgpu/)
     
     # Find the GLFW3 library
-    find_library(GLFW3_LIBRARY NAMES glfw HINTS ${CMAKE_SOURCE_DIR}/include/glfw/src/)
+    find_library(GLFW3_LIBRARY NAMES glfw HINTS ${CMAKE_SOURCE_DIR}/include/glfw/)
 
-    # find_library(GLFW3WGPU NAMES glfw3webgpu HINTS ${CMAKE_SOURCE_DIR}/include/glfw3webgpu/)
+    find_library(GLFW3WGPU NAMES glfw3webgpu HINTS ${CMAKE_SOURCE_DIR}/include/glfw3webgpu/)
 
     message("WGPU_LIBRARY: ${WGPU_LIBRARY}")
     message("GLFW3_LIBRARY: ${GLFW3_LIBRARY}")

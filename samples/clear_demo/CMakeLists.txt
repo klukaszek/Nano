@@ -52,9 +52,11 @@ else()
     endif()
     add_definitions(-DNANO_CIMGUI_DEBUG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
+    target_link_directories(clear_demo PRIVATE ${CMAKE_SOURCE_DIR}/include/webgpu/)
+    target_link_directories(clear_demo PRIVATE ${CMAKE_SOURCE_DIR}/include/glfw3webgpu/)
     # Specify the nessary libraries for the desktop version
     target_link_libraries(clear_demo 
-        cimgui cglm dawn::webgpu_dawn webgpu_glfw ${OS_LIBRARIES}
+        cimgui cglm glfw ${GLFW3WGPU} ${WGPU_LIBRARY} ${OS_LIBRARIES}
     )
 endif()
 
