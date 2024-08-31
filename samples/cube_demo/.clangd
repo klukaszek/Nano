@@ -1,5 +1,7 @@
 CompileFlags:
   Add: 
-    - "-I../../"
+    - "-I../../../../emsdk/upstream/emscripten/cache/sysroot/include/"
     - "-I../../include/"
     - "-I../../include/assets/fonts/"
+    - "-I../../include/glfw/include/"
+    - "-I../../include/cglm/include/"

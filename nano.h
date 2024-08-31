@@ -87,15 +87,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <webgpu/webgpu.h>
 
 // Use web based entry point for Nano
 // if NANO_NATIVE is not defined
 #ifndef NANO_NATIVE
     #include "nano_web.h"
-    #include <webgpu/webgpu.h>
 #else
     #include "nano_native.h"
-    #include <wgpu_native/webgpu.h>
 #endif
 
 #define NANO_CIMGUI
