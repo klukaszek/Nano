@@ -7,11 +7,7 @@
 #include "Roboto-Regular.h"
 #include "cglm/cglm.h"
 
-#ifdef NANO_NATIVE
-    #include <wgpu_native/webgpu.h>
-#else
-    #include <webgpu/webgpu.h>
-#endif
+#include <webgpu/webgpu.h>
 
 // Toggles stdout logging and enables the nano debug imgui overlay
 #define NANO_DEBUG
